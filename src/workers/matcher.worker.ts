@@ -38,11 +38,67 @@ function wasmStringSimilarity(a: string, b: string): number {
   }
 }
 
+// --- TF-IDF Semantic Matcher ---
+let idfMap = new Map<string, number>();
+
+function computeTF(tokens: string[]): Map<string, number> {
+  const tf = new Map<string, number>();
+  if (tokens.length === 0) return tf;
+  for (const t of tokens) {
+    tf.set(t, (tf.get(t) || 0) + 1);
+  }
+  const max = Math.max(...Array.from(tf.values()));
+  for (const [k, v] of tf.entries()) {
+    tf.set(k, v / max);
+  }
+  return tf;
+}
+
+function computeIDF(corpus: string[][]) {
+  const N = corpus.length;
+  const df = new Map<string, number>();
+  for (const doc of corpus) {
+    const unique = new Set(doc);
+    for (const token of unique) {
+      df.set(token, (df.get(token) || 0) + 1);
+    }
+  }
+  idfMap.clear();
+  for (const [token, count] of df.entries()) {
+    idfMap.set(token, Math.log(N / (1 + count)));
+  }
+}
+
+function computeTFIDF(tokens: string[]): Map<string, number> {
+  const tf = computeTF(tokens);
+  const tfidf = new Map<string, number>();
+  for (const [k, v] of tf.entries()) {
+    tfidf.set(k, v * (idfMap.get(k) || Math.log(1))); // Default IDF if unknown
+  }
+  return tfidf;
+}
+
+function cosineSimilarity(vecA: Map<string, number>, vecB: Map<string, number>): number {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (const [k, v] of vecA.entries()) {
+    dotProduct += v * (vecB.get(k) || 0);
+    normA += v * v;
+  }
+  for (const v of vecB.values()) {
+    normB += v * v;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 // Receive messages from main thread
 self.onmessage = async (e: MessageEvent) => {
-  const { type, sourceEntries, targetEntries, confidenceThreshold, profile } = e.data;
+  try {
+    const { type, sourceEntries, targetEntries, confidenceThreshold, profile } = e.data;
 
-  if (type === 'START_MATCHING') {
+    if (type === 'START_MATCHING') {
     if (!wasmModule) {
       await initWasm();
     }
@@ -63,6 +119,19 @@ self.onmessage = async (e: MessageEvent) => {
       }
     }
 
+    // Build TF-IDF Corpus
+    const targetCorpus: string[][] = [];
+    for (const target of targetEntries) {
+      targetCorpus.push(extractTokens(target.normalizedPath + ' ' + target.title));
+    }
+    computeIDF(targetCorpus);
+
+    // Precompute TF-IDF for all targets
+    const targetTfIdfCache = new Map<string, Map<string, number>>();
+    for (const target of targetEntries) {
+      targetTfIdfCache.set(target.id, computeTFIDF(extractTokens(target.normalizedPath + ' ' + target.title)));
+    }
+
     for (let i = 0; i < sourceEntries.length; i += CHUNK_SIZE) {
       const chunk = sourceEntries.slice(i, i + CHUNK_SIZE);
 
@@ -74,7 +143,8 @@ self.onmessage = async (e: MessageEvent) => {
         
         // Canonical Delegation: If this URL is non-canonical, match using its canonical parent's data
         let matchSource = source;
-        const isNonCanonical = source.canonical && source.canonical.toLowerCase().trim() !== source.url.toLowerCase().trim();
+        const sourceUrlStr = source.url || '';
+        const isNonCanonical = source.canonical && source.canonical.toLowerCase().trim() !== sourceUrlStr.toLowerCase().trim();
         
         if (isNonCanonical) {
           const canonicalParent = sourceIndexByUrl.get(source.canonical.toLowerCase().trim());
@@ -176,6 +246,35 @@ self.onmessage = async (e: MessageEvent) => {
           }
         }
 
+        // TIER 4: Semantic TF-IDF Fallback
+        if (!bestTarget) {
+          const srcTokens = extractTokens(matchSource.normalizedPath + ' ' + matchSource.title);
+          if (srcTokens.length > 0) {
+            const srcTfIdf = computeTFIDF(srcTokens);
+            let bestSemanticScore = 0;
+            let semanticTarget: CrawlEntry | null = null;
+
+            for (const candidate of targetEntries) {
+              const candTfIdf = targetTfIdfCache.get(candidate.id);
+              if (candTfIdf) {
+                const sim = cosineSimilarity(srcTfIdf, candTfIdf);
+                if (sim > bestSemanticScore) {
+                  bestSemanticScore = sim;
+                  semanticTarget = candidate;
+                }
+              }
+            }
+
+            const semanticConfidence = Math.round(bestSemanticScore * 100);
+            if (semanticTarget && semanticConfidence >= 40) {
+              bestTarget = semanticTarget;
+              confidenceScore = semanticConfidence;
+              strategy = 'MEDIUM_FUZZY'; // Repurposed for semantic
+              reasons.push(`AI Semantic Match (TF-IDF): ${semanticConfidence}% similarity`);
+            }
+          }
+        }
+
         let status: MappingStatus = 'UNMAPPED' as any;
         if (bestTarget) {
           status = confidenceScore >= confidenceThreshold ? 'APPROVED' : 'NEEDS_REVIEW';
@@ -233,7 +332,10 @@ self.onmessage = async (e: MessageEvent) => {
       self.postMessage({ type: 'PROGRESS', payload: progress });
     }
 
-    // Done
-    self.postMessage({ type: 'COMPLETE', payload: mappings });
+      // Done
+      self.postMessage({ type: 'COMPLETE', payload: mappings });
+    }
+  } catch (err: any) {
+    self.postMessage({ type: 'ERROR', payload: err.message || err.toString() });
   }
 };

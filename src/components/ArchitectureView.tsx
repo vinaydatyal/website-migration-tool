@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { CrawlEntry } from '../types/migration';
-import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown } from 'lucide-react';
+import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown, CheckCircle2, Ban, MessageSquare, ExternalLink } from 'lucide-react';
 
 interface ArchitectureViewProps {
   sourceEntries: CrawlEntry[];
   targetEntries: CrawlEntry[];
   mappings?: import('../types/migration').UrlMapping[];
+  onUpdateMapping?: (id: string, updates: Partial<import('../types/migration').UrlMapping>) => void;
 }
 
 interface TreeNode {
@@ -17,9 +18,11 @@ interface TreeNode {
   targetCount: number;
 }
 
-export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntries, targetEntries, mappings = [] }) => {
+export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntries, targetEntries, mappings = [], onUpdateMapping }) => {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['/']));
   const [folderPages, setFolderPages] = useState<Record<string, number>>({});
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState<string>('');
   
   const PAGE_SIZE = 50;
 
@@ -180,8 +183,8 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
               return (
                 <>
                   {paginatedFiles.map(file => (
+                    <React.Fragment key={file.id}>
               <div 
-                key={file.id} 
                 className="flex items-start py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group border-t border-slate-100 dark:border-slate-800/50"
                 style={{ paddingLeft: `${Math.max(0.5, (depth + 1) * 1.5)}rem` }}
               >
@@ -243,15 +246,114 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                   </div>
                 </div>
 
-                <div className="w-1/3 min-w-0 text-xs flex items-start mt-0.5">
-                  <ArrowRight className="h-3.5 w-3.5 text-brand-500/50 mr-2 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className={`truncate ${file.status === 'GONE_410' ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}`}>
-                      {file.status === 'GONE_410' ? '410 GONE' : (file.target ? file.target.normalizedPath : file.targetUrl || 'Unmapped')}
+                <div className="w-1/3 min-w-0 text-xs flex flex-col mt-0.5">
+                  <div className="flex items-start">
+                    <ArrowRight className="h-3.5 w-3.5 text-brand-500/50 mr-2 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className={`truncate ${file.status === 'GONE_410' ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}`}>
+                        {file.status === 'GONE_410' ? '410 GONE' : (file.target ? file.target.normalizedPath : file.targetUrl || 'Unmapped')}
+                      </div>
                     </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity pl-5">
+                    <a 
+                      href={file.source.url} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500 transition-colors inline-flex"
+                      title="Open Source"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                    {(file.target?.url || file.targetUrl) && (
+                      <a 
+                        href={file.target?.url || file.targetUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500 transition-colors inline-flex"
+                        title="Open Target"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                    {onUpdateMapping && (
+                      <>
+                        <button
+                          onClick={() => onUpdateMapping(file.id, { status: 'APPROVED' })}
+                          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                          title="Approve"
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => onUpdateMapping(file.id, { status: 'GONE_410' })}
+                          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                          title="Mark 410"
+                        >
+                          <Ban className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (editingNoteId === file.id) {
+                              setEditingNoteId(null);
+                            } else {
+                              setEditingNoteId(file.id);
+                              setNoteInput(file.notes || '');
+                            }
+                          }}
+                          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
+                          title="Add Note"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
+              
+              {editingNoteId === file.id && (
+                <div className="flex items-center gap-2 py-2 px-4 mb-2 bg-slate-50 dark:bg-slate-900/30 border-y border-slate-100 dark:border-slate-800/30"
+                     style={{ marginLeft: `${Math.max(0.5, (depth + 1) * 1.5)}rem` }}
+                >
+                  <input
+                    type="text"
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    placeholder="Add a note to this mapping..."
+                    className="flex-1 px-3 py-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && onUpdateMapping) {
+                        onUpdateMapping(file.id, { notes: noteInput });
+                        setEditingNoteId(null);
+                      } else if (e.key === 'Escape') {
+                        setEditingNoteId(null);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (onUpdateMapping) {
+                        onUpdateMapping(file.id, { notes: noteInput });
+                        setEditingNoteId(null);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded bg-brand-500 text-white text-xs font-semibold hover:bg-brand-600"
+                  >
+                    Save Note
+                  </button>
+                  <button
+                    onClick={() => setEditingNoteId(null)}
+                    className="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </React.Fragment>
             ))}
               
               {totalPages > 1 && (

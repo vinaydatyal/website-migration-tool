@@ -145,6 +145,52 @@ export function normalizeCrawlRow(row: Record<string, any>, index: number): Craw
 }
 
 /**
+ * Parses XML Sitemap string or File object
+ */
+export async function parseXmlSitemap(fileOrContent: File | string): Promise<CrawlEntry[]> {
+  let content = '';
+  if (fileOrContent instanceof File) {
+    content = await fileOrContent.text();
+  } else {
+    content = fileOrContent;
+  }
+
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(content, "text/xml");
+  const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
+
+  if (locs.length === 0) {
+    return [];
+  }
+
+  return locs.map((loc, index) => {
+    const url = loc.textContent?.trim() || '';
+    return {
+      id: `sitemap_${index}_${Math.random().toString(36).substring(2, 7)}`,
+      url,
+      normalizedPath: normalizeUrlPath(url),
+      statusCode: 200, // Assume 200 for sitemap URLs
+      status: 'OK',
+      contentType: 'text/html',
+      title: '', // Not available in basic XML sitemaps
+      titleLength: 0,
+      metaDescription: '',
+      metaDescriptionLength: 0,
+      h1: '',
+      h2: '',
+      metaRobots: 'index, follow',
+      indexability: 'Indexable',
+      canonical: url, // Assume canonical is self
+      wordCount: 0,
+      inlinks: 0,
+      outlinks: 0,
+      responseTime: 0,
+      crawlDepth: 1,
+    };
+  });
+}
+
+/**
  * Parses CSV string or File object using PapaParse
  */
 export async function parseScreamingFrogCsv(fileOrContent: File | string): Promise<CrawlEntry[]> {
@@ -280,4 +326,34 @@ export async function parseAnalyticsFile(file: File, platform: AnalyticsPlatform
   });
 
   return analyticsMap;
+}
+
+/**
+ * Parses a custom Redirect Map CSV provided by the user
+ */
+export async function parseRedirectMapCsv(file: File): Promise<{sourceUrl: string, targetUrl: string}[]> {
+  return new Promise((resolve, reject) => {
+    Papa.parse(file as any, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      transformHeader: (h) => h.trim(),
+      complete: (results) => {
+        if (!results.data || results.data.length === 0) {
+          return resolve([]);
+        }
+        const mappings: {sourceUrl: string, targetUrl: string}[] = [];
+        results.data.forEach((row: any) => {
+          const source = findValue(row, ['Source', 'Old URL', 'Source URL', 'Old']);
+          const target = findValue(row, ['Target', 'New URL', 'Target URL', 'New', 'Destination']);
+          if (source && target) {
+            mappings.push({ sourceUrl: String(source).trim(), targetUrl: String(target).trim() });
+          }
+        });
+        resolve(mappings);
+      },
+      error: (error) => {
+        reject(error);
+      }
+    });
+  });
 }

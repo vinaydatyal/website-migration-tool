@@ -1,6 +1,6 @@
 import React from 'react';
 import { UrlMapping, CrawlEntry } from '../types/migration';
-import { CheckCircle2, Ban, Check, X, Copy } from 'lucide-react';
+import { CheckCircle2, Ban, Check, X, Copy, Loader2, Zap, Eye, EyeOff, Edit2, ExternalLink } from 'lucide-react';
 
 interface Props {
   m: UrlMapping;
@@ -16,6 +16,9 @@ interface Props {
   targetCount: number;
   isSelected: boolean;
   onToggleSelect: (id: string) => void;
+  onToggleHide: (id: string, hide: boolean) => void;
+  onSaveNotes?: (id: string, notes: string) => void;
+  onUpdateMapping?: (id: string, updates: Partial<UrlMapping>) => void;
 }
 
 export const UrlMappingTableRow = React.memo(({
@@ -31,9 +34,35 @@ export const UrlMappingTableRow = React.memo(({
   onShowDuplicates,
   targetCount,
   isSelected,
-  onToggleSelect
+  onToggleSelect,
+  onToggleHide,
+  onSaveNotes,
+  onUpdateMapping
 }: Props) => {
   const [customTargetInput, setCustomTargetInput] = React.useState('');
+  const [pingStatus, setPingStatus] = React.useState<number | null>(null);
+  const [isPinging, setIsPinging] = React.useState(false);
+  const [localNotes, setLocalNotes] = React.useState(m.notes || '');
+
+  React.useEffect(() => {
+    setLocalNotes(m.notes || '');
+  }, [m.notes]);
+
+  const handlePing = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const urlToPing = m.target?.url || m.targetUrl;
+    if (!urlToPing || m.status === 'GONE_410') return;
+    setIsPinging(true);
+    try {
+      const res = await fetch(`http://localhost:3001/api/ping-url?url=${encodeURIComponent(urlToPing)}`);
+      const data = await res.json();
+      setPingStatus(data.status);
+    } catch (err) {
+      setPingStatus(0);
+    } finally {
+      setIsPinging(false);
+    }
+  };
 
   React.useEffect(() => {
     if (isEditing) {
@@ -51,12 +80,12 @@ export const UrlMappingTableRow = React.memo(({
 
   return (
     <div 
-      className={`flex items-start w-full border-b border-slate-200 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${
-        m.status === 'GONE_410' ? 'opacity-60 bg-slate-100 dark:bg-slate-950/40' : ''
+      className={`flex flex-col md:flex-row md:items-start w-full border-b border-slate-200 dark:border-slate-800/60 transition-colors py-3 md:py-0 relative ${
+        m.status === 'GONE_410' ? 'opacity-60 bg-slate-100 dark:bg-slate-950/40' : targetCount > 1 && m.strategy !== 'UNMAPPED' ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-100/50 dark:hover:bg-amber-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
       }`}
     >
       {/* Checkbox Column */}
-      <div className="py-4 pl-4 pr-2 shrink-0 flex items-center justify-center">
+      <div className="absolute top-4 left-4 md:static md:py-4 md:pl-4 md:pr-2 shrink-0 flex items-center justify-center">
         <input
           type="checkbox"
           checked={isSelected}
@@ -66,12 +95,22 @@ export const UrlMappingTableRow = React.memo(({
       </div>
 
       {/* Source URL Column */}
-      <div className="py-4 px-3 w-[35%] space-y-1.5 shrink-0">
+      <div className="pt-1 pb-2 pl-11 pr-4 md:py-4 md:px-3 w-full md:w-[35%] space-y-1.5 shrink-0">
         <div className="flex items-center space-x-2">
           <span className="font-mono font-bold text-slate-800 dark:text-slate-100 break-all text-xs">
             {m.source.normalizedPath}
           </span>
-          <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+          <a 
+            href={m.source.url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 transition-colors inline-flex shrink-0"
+            title="Open Source URL"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink className="h-3 w-3" />
+          </a>
+          <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
             {m.source.inlinks} inlinks
           </span>
         </div>
@@ -86,7 +125,7 @@ export const UrlMappingTableRow = React.memo(({
       </div>
 
       {/* Target URL Column */}
-      <div className="py-4 px-4 w-[35%] space-y-1.5 shrink-0">
+      <div className="pt-0 pb-2 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-[35%] space-y-1.5 shrink-0">
         {isEditing ? (
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
@@ -120,10 +159,24 @@ export const UrlMappingTableRow = React.memo(({
                   <div
                     key={t.id}
                     onClick={() => onSelectTarget(m.id, t.id)}
-                    className="px-3 py-2 border-b last:border-0 border-slate-100 dark:border-slate-800 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer transition-colors"
+                    className="group flex items-center justify-between px-3 py-2 border-b last:border-0 border-slate-100 dark:border-slate-800 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer transition-colors"
                   >
-                    <div className="font-mono text-emerald-600 dark:text-emerald-300 font-bold text-[11px]">{t.normalizedPath}</div>
-                    {t.title && <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{t.title}</div>}
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="font-mono text-emerald-600 dark:text-emerald-300 font-bold text-[11px] truncate">{t.normalizedPath}</div>
+                      {t.title && <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{t.title}</div>}
+                    </div>
+                    {t.url && (
+                      <a
+                        href={t.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                        title="Open Target URL"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>
@@ -151,6 +204,37 @@ export const UrlMappingTableRow = React.memo(({
                       HTTP {m.target.statusCode}
                     </span>
                   )}
+                  {pingStatus !== null && (
+                    <span className={`px-1.5 py-0.2 text-[10px] font-mono rounded border ${
+                      pingStatus >= 200 && pingStatus < 300 
+                        ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/40' 
+                        : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/40'
+                    }`}>
+                      {pingStatus === 0 ? 'FAIL' : `HTTP ${pingStatus}`}
+                    </span>
+                  )}
+                  {m.status !== 'GONE_410' && (m.target?.url || m.targetUrl) && !isEditing && (
+                    <div className="flex items-center space-x-1 shrink-0">
+                      <button 
+                        onClick={handlePing}
+                        disabled={isPinging}
+                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 transition-colors"
+                        title="Ping URL"
+                      >
+                        {isPinging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                      </button>
+                      <a 
+                        href={m.target?.url || m.targetUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 transition-colors inline-flex"
+                        title="Open Target URL"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  )}
                 </div>
                 
                 {m.target?.title && (
@@ -172,13 +256,6 @@ export const UrlMappingTableRow = React.memo(({
                   </button>
                 )}
               </div>
-              
-              <button
-                onClick={() => onStartEdit(m.id)}
-                className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 underline decoration-slate-300 dark:decoration-slate-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
-              >
-                Override
-              </button>
             </div>
 
             {/* Parity Warnings pill */}
@@ -201,31 +278,47 @@ export const UrlMappingTableRow = React.memo(({
                 ))}
               </div>
             )}
+
+            {/* Notes Field */}
+            <div className="mt-2 group/note relative">
+              <input
+                type="text"
+                placeholder="Add a note..."
+                value={localNotes}
+                onChange={(e) => setLocalNotes(e.target.value)}
+                onBlur={() => {
+                  if (localNotes !== (m.notes || '')) {
+                    onUpdateMapping?.(m.id, { notes: localNotes });
+                  }
+                }}
+                className="w-full text-[10px] bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 dark:focus:border-brand-500 outline-none px-0 py-0.5 text-slate-600 dark:text-slate-400 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
+              />
+            </div>
           </>
         )}
       </div>
 
-      <div className="py-4 px-4 w-32 shrink-0 flex flex-col items-start space-y-1">
+      <div className="py-1 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-32 shrink-0 flex flex-row md:flex-col items-center md:items-start space-x-4 md:space-x-0 md:space-y-1">
         {(m.source.visits !== undefined && m.source.visits > 0) ? (
-          <div className="text-[11px] text-slate-700 dark:text-slate-300 font-mono flex items-center justify-between w-full">
-            <span className="text-slate-500">Visits:</span>
-            <span className="font-bold">{m.source.visits.toLocaleString()}</span>
+          <div className="text-[11px] text-slate-700 dark:text-slate-300 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full">
+            <span className="text-slate-500 md:hidden">Clicks:</span>
+            <span className="font-bold md:text-right text-slate-600 dark:text-slate-400">{m.source.visits.toLocaleString()}</span>
           </div>
         ) : (
           <div className="text-[11px] text-slate-400 dark:text-slate-600 font-mono">No data</div>
         )}
         
         {(m.source.revenue !== undefined && m.source.revenue > 0) && (
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center justify-between w-full">
-            <span className="text-emerald-500/70">Rev:</span>
-            <span className="font-bold">${m.source.revenue.toLocaleString()}</span>
+          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full mt-0.5">
+            <span className="text-emerald-500/70 md:hidden">Impr:</span>
+            <span className="font-bold md:text-right">{m.source.revenue.toLocaleString()}</span>
           </div>
         )}
       </div>
 
       {/* Confidence Column */}
-      <div className="py-4 px-4 w-24 shrink-0 flex flex-col items-center">
-        <div className="inline-flex flex-col items-center space-y-1">
+      <div className="py-1 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-24 shrink-0 flex flex-row md:flex-col items-center md:items-center space-x-3 md:space-x-0">
+        <div className="inline-flex flex-row md:flex-col items-center space-x-2 md:space-x-0 md:space-y-1">
           <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold ${
             m.confidenceScore >= 90
               ? 'bg-brand-50 dark:bg-brand-500/20 text-brand-600 dark:text-brand-300 border border-brand-200 dark:border-brand-500/30'
@@ -244,7 +337,7 @@ export const UrlMappingTableRow = React.memo(({
       </div>
 
       {/* Actions Column */}
-      <div className="py-4 px-4 w-28 shrink-0 flex justify-end space-x-1">
+      <div className="absolute top-3 right-3 md:static md:py-4 md:px-4 w-auto md:w-36 shrink-0 flex justify-end space-x-1">
         {m.status !== 'APPROVED' && m.status !== 'GONE_410' && (
           <button
             onClick={() => onApprove(m.id)}
@@ -255,6 +348,16 @@ export const UrlMappingTableRow = React.memo(({
           </button>
         )}
 
+        {!isEditing && (
+          <button
+            onClick={() => onStartEdit(m.id)}
+            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-all cursor-pointer"
+            title="Edit Target URL"
+          >
+            <Edit2 className="h-4 w-4" />
+          </button>
+        )}
+
         {m.status !== 'GONE_410' && (
           <button
             onClick={() => onSet410(m.id)}
@@ -262,6 +365,16 @@ export const UrlMappingTableRow = React.memo(({
             title="Set as 410 Gone (Removed/Discontinued)"
           >
             <Ban className="h-4 w-4" />
+          </button>
+        )}
+
+        {!isEditing && (
+          <button
+            onClick={() => onToggleHide(m.id, !m.isHidden)}
+            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer"
+            title={m.isHidden ? "Unhide" : "Hide"}
+          >
+            {m.isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
           </button>
         )}
       </div>

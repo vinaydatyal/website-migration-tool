@@ -10,15 +10,28 @@ import {
   FileCheck,
   AlertOctagon,
   FileCode2,
-  Sparkles
+  Sparkles,
+  ArrowRightLeft,
+  Download,
+  Loader2
 } from 'lucide-react';
-import { MigrationSummaryStats, UrlMapping, DiscrepancySeverity, ParityDiscrepancy } from '../types/migration';
+import { toast } from 'sonner';
+import { MigrationSummaryStats, UrlMapping, DiscrepancySeverity, ParityDiscrepancy, MigrationSnapshot } from '../types/migration';
+import { MappingStatusChart } from './MappingStatusChart';
+import { ProgressChart } from './ProgressChart';
+import { GscIntegration } from './GscIntegration';
 
 interface DashboardOverviewProps {
   stats: MigrationSummaryStats;
   mappings: UrlMapping[];
   onNavigateTab: (tab: any) => void;
   onOpenExport: () => void;
+  onUpdateTargetData: () => void;
+  onSwapDomain: () => void;
+  onMergeGscData: (data: any[]) => void;
+  isGscConnected: boolean;
+  onGscConnected: () => void;
+  snapshots: MigrationSnapshot[];
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -26,8 +39,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   mappings,
   onNavigateTab,
   onOpenExport,
+  onUpdateTargetData,
+  onSwapDomain,
+  onMergeGscData,
+  isGscConnected,
+  onGscConnected,
+  snapshots,
 }) => {
   const [currentIssuePage, setCurrentIssuePage] = React.useState(1);
+  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
   const issuesPerPage = 4;
   // Collect all critical & high severity parity discrepancies across mappings
   const criticalDiscrepancies = mappings.flatMap((m: UrlMapping) => 
@@ -53,8 +73,72 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     currentIssuePage * issuesPerPage
   );
 
+  const handleDownloadPdf = async () => {
+    try {
+      setIsGeneratingPdf(true);
+      toast.loading('Generating PDF report...', { id: 'pdf-toast' });
+      
+      const payload = {
+        stats,
+        projectMetadata: { projectName: 'Migration Audit' }, // You can pass actual projectMetadata here if available as a prop
+        criticalIssues: criticalIssues // or send all criticalIssues
+      };
+
+      const response = await fetch('/api/pdf-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `migration-audit-report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('PDF report generated!', { id: 'pdf-toast' });
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to generate PDF report', { id: 'pdf-toast' });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Top Action Bar */}
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={handleDownloadPdf}
+          disabled={isGeneratingPdf}
+          className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-sm font-semibold rounded-lg transition-colors border border-slate-700"
+        >
+          {isGeneratingPdf ? <Loader2 className="h-4 w-4 text-brand-400 animate-spin" /> : <Download className="h-4 w-4 text-brand-400" />}
+          <span>Export PDF Report</span>
+        </button>
+        <button
+          onClick={onSwapDomain}
+          className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-lg transition-colors border border-slate-700"
+        >
+          <ArrowRightLeft className="h-4 w-4 text-brand-400" />
+          <span>Swap Domain</span>
+        </button>
+        <button
+          onClick={onUpdateTargetData}
+          className="flex items-center space-x-2 px-4 py-2 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-sm font-semibold rounded-lg transition-colors border border-brand-500/30"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span>Manage Data Sources</span>
+        </button>
+      </div>
+
       {/* Top Banner / Executive Score Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Readiness Gauge Card */}
@@ -226,6 +310,22 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             </div>
           </div>
+          
+          {/* Charts Row */}
+          <div className="col-span-2 sm:col-span-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col items-center">
+              <div className="w-full flex items-center justify-between text-xs mb-2">
+                <span className="font-semibold text-slate-300">Status Distribution</span>
+              </div>
+              <MappingStatusChart mappings={mappings} />
+            </div>
+            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col items-center">
+              <div className="w-full flex items-center justify-between text-xs mb-2">
+                <span className="font-semibold text-slate-300">Progress (Readiness Score)</span>
+              </div>
+              <ProgressChart snapshots={snapshots} currentScore={stats.readinessScore} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -293,6 +393,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
       )}
+
+      {/* GSC Integration */}
+      <div className="pt-2">
+        <GscIntegration
+          onDataFetched={onMergeGscData}
+          isConnected={isGscConnected}
+          onConnected={onGscConnected}
+        />
+      </div>
 
       {/* Quick Launch Buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">

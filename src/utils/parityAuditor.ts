@@ -14,15 +14,30 @@ export function evaluateParityDiscrepancies(source: CrawlEntry, target: CrawlEnt
   const isTargetIndexable = target.indexability === 'Indexable' && !target.metaRobots.toLowerCase().includes('noindex');
 
   if (isSourceIndexable && !isTargetIndexable) {
+    const isNoIndex = target.metaRobots.toLowerCase().includes('noindex');
+    const isTargetCanonicalized = target.canonical && target.canonical.toLowerCase().trim() !== target.url.toLowerCase().trim();
+    
+    let severity: ParityDiscrepancy['severity'] = 'CRITICAL';
+    let title = 'Target Page is Non-Indexable / Noindex';
+    let displayValue: string = target.indexability;
+
+    if (isNoIndex) {
+      displayValue = 'Noindex tag';
+    } else if (isTargetCanonicalized) {
+      severity = 'INFO';
+      title = 'Target Page is Canonicalized (Non-Indexable)';
+      displayValue = 'Canonicalized';
+    }
+    
     discrepancies.push({
       id: `disc_noindex_${source.id}`,
       type: 'NOINDEX_ON_TARGET',
-      severity: 'CRITICAL',
-      title: 'Target Page is Non-Indexable / Noindex',
-      description: `Source URL was indexable, but target page has '${target.metaRobots || 'Non-Indexable'}'. This will cause Google to de-index the page post-launch.`,
+      severity,
+      title,
+      description: `Source URL was indexable, but target page is marked as '${displayValue}'. ${isTargetCanonicalized ? 'This is often expected for pagination or duplicate content consolidating equity.' : 'This will cause Google to de-index the page post-launch.'}`,
       sourceValue: source.metaRobots || 'Indexable',
-      targetValue: target.metaRobots || 'Non-Indexable',
-      recommendation: 'Remove noindex directive from target staging/production template.'
+      targetValue: isNoIndex ? target.metaRobots : displayValue,
+      recommendation: isTargetCanonicalized ? 'Verify this canonicalization is intentional.' : 'Ensure target template is indexable (check robots tags and canonical tags).'
     });
   }
 
@@ -198,8 +213,53 @@ export function calculateMigrationStats(
   sourceEntries: CrawlEntry[],
   targetEntries: CrawlEntry[],
   mappings: UrlMapping[],
-  profile: MigrationProfile = 'UNKNOWN'
+  profile: MigrationProfile = 'CMS_SWITCH',
+  resolvedDiscrepancies: Record<string, boolean> = {}
 ): MigrationSummaryStats {
+  
+  // -- PASS 1: Detect "Hub Traps" (Soft 404s) --
+  // Count how many source URLs are mapped to each target URL
+  const targetFrequency = new Map<string, string[]>();
+  for (const m of mappings) {
+    if (m.targetUrl && m.status !== 'REJECTED') {
+      const arr = targetFrequency.get(m.targetUrl) || [];
+      arr.push(m.id);
+      targetFrequency.set(m.targetUrl, arr);
+    }
+  }
+
+  // Flag mappings that point to a Hub Trap (>3 sources to 1 target, excluding homepage)
+  for (const [targetUrl, mappingIds] of targetFrequency.entries()) {
+    if (mappingIds.length > 3) {
+      const targetEntry = targetEntries.find(t => t.url === targetUrl);
+      if (targetEntry && targetEntry.normalizedPath !== '/' && targetEntry.normalizedPath !== '') {
+        // Apply the discrepancy to all these mappings
+        for (const mId of mappingIds) {
+          const mapping = mappings.find(m => m.id === mId);
+          if (mapping) {
+            // Check if it already has this discrepancy to avoid duplicates
+            const hasHubTrap = mapping.discrepancies.some(d => d.type === 'HUB_TRAP_SOFT_404');
+            if (!hasHubTrap) {
+              mapping.discrepancies.push({
+                id: `disc_hubtrap_${mapping.id}_${targetUrl}`,
+                type: 'HUB_TRAP_SOFT_404',
+                severity: 'CRITICAL',
+                title: 'SEO Hub Trap (Soft 404 Risk)',
+                description: `${mappingIds.length} different source URLs are being redirected to this single target page. Google may treat this as a Soft 404 and drop the SEO equity.`,
+                sourceValue: 'Multiple Source URLs',
+                targetValue: targetEntry.url,
+                recommendation: 'Try to map to more specific, 1-to-1 equivalent pages rather than a catch-all category hub.'
+              });
+              // Recalculate risk score since we added a critical issue
+              mapping.riskScore = Math.min(100, mapping.riskScore + 30);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // -- PASS 2: Calculate Stats --
   let autoMatchedCount = 0;
   let exactPathCount = 0;
   let exactTitleCount = 0;
@@ -207,7 +267,6 @@ export function calculateMigrationStats(
   let needsReviewCount = 0;
   let unmappedCount = 0;
   let highRiskCount = 0;
-  let criticalDiscrepanciesCount = 0;
   let totalInlinksPreserved = 0;
   let totalInlinksAtRisk = 0;
 
@@ -228,10 +287,12 @@ export function calculateMigrationStats(
     if (m.riskScore >= 60) {
       highRiskCount++;
     }
-
-    const criticalIssues = m.discrepancies.filter(d => d.severity === 'CRITICAL');
-    criticalDiscrepanciesCount += criticalIssues.length;
   }
+
+  const criticalDiscrepanciesCount = mappings.reduce((acc, m) => {
+    const criticals = m.discrepancies.filter(d => d.severity === 'CRITICAL' && !resolvedDiscrepancies[d.id]).length;
+    return acc + criticals;
+  }, 0);
 
   // Calculate Migration Readiness Score (0-100%)
   const total = sourceEntries.length || 1;

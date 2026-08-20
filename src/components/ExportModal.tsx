@@ -11,7 +11,7 @@ import {
   FileSpreadsheet,
   CheckCircle2
 } from 'lucide-react';
-import { UrlMapping, SynthesizedPattern, ExportFormat } from '../types/migration';
+import { UrlMapping, SynthesizedPattern, ExportFormat, MigrationSummaryStats, ProjectMetadata } from '../types/migration';
 import { exportRedirects } from '../utils/exporters';
 import { toast } from 'sonner';
 
@@ -20,6 +20,10 @@ interface ExportModalProps {
   onClose: () => void;
   mappings: UrlMapping[];
   patterns: SynthesizedPattern[];
+  stats: MigrationSummaryStats | null;
+  projectMetadata: ProjectMetadata;
+  checklistProgress: Record<string, boolean>;
+  targetEntries?: any[]; // pass down target entries for Sitemap
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -27,36 +31,47 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   mappings,
   patterns,
+  stats,
+  projectMetadata,
+  checklistProgress,
+  targetEntries = []
 }) => {
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('HTACCESS');
   const [copied, setCopied] = useState(false);
   const [targetDomain, setTargetDomain] = useState('');
 
   const exportData = useMemo(() => {
-    return exportRedirects(selectedFormat, mappings, patterns, targetDomain);
-  }, [selectedFormat, mappings, patterns, targetDomain]);
+    return exportRedirects(selectedFormat, mappings, patterns, targetDomain, stats, projectMetadata, checklistProgress, targetEntries);
+  }, [selectedFormat, mappings, patterns, targetDomain, stats, projectMetadata, checklistProgress, targetEntries]);
 
   const previewContent = useMemo(() => {
-    const lines = exportData.content.split('\n');
+    if (exportData.mimeType.includes('spreadsheet')) {
+      return "[Binary Excel Document - Click Download to view]";
+    }
+    const lines = (exportData.content as string).split('\n');
     const MAX_PREVIEW_LINES = 1000;
     
     if (lines.length > MAX_PREVIEW_LINES) {
       return lines.slice(0, MAX_PREVIEW_LINES).join('\n') + `\n\n... [${(lines.length - MAX_PREVIEW_LINES).toLocaleString()} more lines hidden for performance. Download the file to view everything!]`;
     }
-    return exportData.content;
-  }, [exportData.content]);
+    return exportData.content as string;
+  }, [exportData.content, exportData.mimeType]);
 
   if (!isOpen) return null;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(exportData.content);
+    if (exportData.mimeType.includes('spreadsheet')) {
+      toast.error('Cannot copy binary Excel files.');
+      return;
+    }
+    navigator.clipboard.writeText(exportData.content as string);
     setCopied(true);
     toast.success('Redirect configuration copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    const blob = new Blob([exportData.content], { type: exportData.mimeType });
+    const blob = new Blob([exportData.content as BlobPart], { type: exportData.mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -76,6 +91,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     { id: 'NEXTJS_CONFIG', label: 'Next.js Config', icon: FileCode2 },
     { id: 'WORDPRESS_REDIRECTION_CSV', label: 'WP Redirection', icon: Globe },
     { id: 'FULL_MAPPING_CSV', label: 'Full Audit CSV', icon: FileSpreadsheet },
+    { id: 'FULL_AUDIT_EXCEL', label: 'Playbook + Audit (Excel)', icon: FileSpreadsheet },
+    { id: 'SITEMAP_XML', label: 'Target Sitemap (XML)', icon: Globe },
   ];
 
   return (

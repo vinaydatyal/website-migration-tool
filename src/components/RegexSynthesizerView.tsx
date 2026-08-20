@@ -10,9 +10,12 @@ import {
   Trash2,
   Eye,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 import { SynthesizedPattern, UrlMapping } from '../types/migration';
+import { toast } from 'sonner';
 
 interface RegexSynthesizerViewProps {
   patterns: SynthesizedPattern[];
@@ -23,6 +26,16 @@ interface RegexSynthesizerViewProps {
 }
 
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const isDangerousRegex = (pattern: string): boolean => {
+  // Catch simple nested quantifiers which are a primary cause of ReDoS
+  const dangerousPatterns = [
+    /(\([^)]+[*+?]+\)+[*+?]+)/, // Nested grouping quantifiers
+    /\[[^\]]+\][*+?]+\s*[*+?]+/, // Nested bracket quantifiers
+    /[*+?]{2,}/ // Consecutive quantifiers like ++, *+, etc.
+  ];
+  return dangerousPatterns.some(regex => regex.test(pattern));
+};
 
 export const RegexSynthesizerView: React.FC<RegexSynthesizerViewProps> = ({
   patterns,
@@ -72,14 +85,26 @@ export const RegexSynthesizerView: React.FC<RegexSynthesizerViewProps> = ({
     if (matchType === 'STARTS_WITH') sourcePattern = `^${escapeRegex(searchStr)}`;
     else if (matchType === 'ENDS_WITH') sourcePattern = `${escapeRegex(searchStr)}$`;
     else if (matchType === 'CONTAINS') sourcePattern = escapeRegex(searchStr);
-    else if (matchType === 'EXACT_REGEX') sourcePattern = searchStr;
+    else if (matchType === 'EXACT_REGEX') {
+      if (isDangerousRegex(searchStr)) {
+        throw new Error('Potentially dangerous regex (ReDoS risk)');
+      }
+      sourcePattern = searchStr;
+    }
 
     return { sourcePattern, targetPattern: targetStr };
   };
 
   const previewMappings = useMemo(() => {
     if (!searchStr) return [];
-    const { sourcePattern, targetPattern } = getCompiledPatterns();
+    let sourcePattern, targetPattern;
+    try {
+      const compiled = getCompiledPatterns();
+      sourcePattern = compiled.sourcePattern;
+      targetPattern = compiled.targetPattern;
+    } catch (e) {
+      return [];
+    }
     let regex: RegExp;
     try {
       regex = new RegExp(sourcePattern);
@@ -96,7 +121,13 @@ export const RegexSynthesizerView: React.FC<RegexSynthesizerViewProps> = ({
 
   const totalAffected = useMemo(() => {
     if (!searchStr) return 0;
-    const { sourcePattern } = getCompiledPatterns();
+    let sourcePattern;
+    try {
+      const compiled = getCompiledPatterns();
+      sourcePattern = compiled.sourcePattern;
+    } catch (e) {
+      return 0;
+    }
     try {
       const regex = new RegExp(sourcePattern);
       return mappings.filter(m => regex.test(m.source.normalizedPath)).length;
@@ -107,12 +138,21 @@ export const RegexSynthesizerView: React.FC<RegexSynthesizerViewProps> = ({
 
   const handleSaveRule = () => {
     if (!searchStr || !targetStr) return;
-    const { sourcePattern, targetPattern } = getCompiledPatterns();
+    let sourcePattern, targetPattern;
+    try {
+      const compiled = getCompiledPatterns();
+      sourcePattern = compiled.sourcePattern;
+      targetPattern = compiled.targetPattern;
+    } catch (e: any) {
+      toast.error(e.message || 'Invalid pattern');
+      return;
+    }
     
     // Test if valid regex
     try {
       new RegExp(sourcePattern);
     } catch {
+      toast.error('Invalid Regex Syntax');
       return;
     }
 

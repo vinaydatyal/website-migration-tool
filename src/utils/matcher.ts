@@ -294,6 +294,9 @@ export async function matchSourceAndTargetEntriesAsync(
         } else if (type === 'COMPLETE') {
           resolve(payload);
           worker.terminate();
+        } else if (type === 'ERROR') {
+          reject(new Error(payload));
+          worker.terminate();
         }
       };
 

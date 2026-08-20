@@ -1,5 +1,7 @@
 import Papa from 'papaparse';
-import { UrlMapping, SynthesizedPattern, ExportFormat } from '../types/migration';
+import * as XLSX from 'xlsx';
+import { UrlMapping, SynthesizedPattern, ExportFormat, MigrationSummaryStats, ProjectMetadata } from '../types/migration';
+import { MIGRATION_CHECKLISTS } from '../data/checklists';
 
 /**
  * Automatically synthesizes regex rules by finding common directory prefix shifts
@@ -88,6 +90,34 @@ export function synthesizeRegexPatterns(mappings: UrlMapping[]): SynthesizedPatt
   }
 
   return patterns;
+}
+
+/**
+ * Generates an XML Sitemap for the new target website
+ */
+export function generateXmlSitemap(targetEntries: { url: string, statusCode?: number }[]): string {
+  const validUrls = targetEntries
+    .filter(e => e.statusCode === 200 || !e.statusCode)
+    .map(e => e.url.split('#')[0]) // remove hash
+    .filter((url, index, self) => self.indexOf(url) === index); // deduplicate
+
+  const lines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+  ];
+
+  for (const url of validUrls) {
+    // Basic XML escaping
+    const escapedUrl = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    lines.push(`  <url>`);
+    lines.push(`    <loc>${escapedUrl}</loc>`);
+    lines.push(`    <changefreq>weekly</changefreq>`);
+    lines.push(`    <priority>0.8</priority>`);
+    lines.push(`  </url>`);
+  }
+
+  lines.push('</urlset>');
+  return lines.join('\n');
 }
 
 /**
@@ -257,6 +287,14 @@ export function generateWordpressRedirectionCsv(mappings: UrlMapping[]): string 
  * Generates Comprehensive Full Mapping CSV
  */
 export function generateFullMappingCsv(mappings: UrlMapping[]): string {
+  const targetCounts = new Map<string, number>();
+  for (const m of mappings) {
+    if (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED') {
+      const url = m.targetUrl.toLowerCase();
+      targetCounts.set(url, (targetCounts.get(url) || 0) + 1);
+    }
+  }
+
   const rows = mappings.map(m => {
     const getError = (types: string[]) => {
       const disc = m.discrepancies.find(d => types.includes(d.type));
@@ -282,6 +320,8 @@ export function generateFullMappingCsv(mappings: UrlMapping[]): string {
       'Target Canonical': m.target ? m.target.canonical : '',
       'Target Status': m.target ? m.target.statusCode : '',
       'Target Indexability': m.target ? m.target.indexability : '',
+      'Is Conflict': (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED' && (targetCounts.get(m.targetUrl.toLowerCase()) || 0) > 1) ? 'TRUE' : 'FALSE',
+      'Notes': m.notes || '',
       'Match Confidence (%)': m.confidenceScore,
       'Strategy': m.strategy,
       'Status': m.status,
@@ -303,14 +343,47 @@ export function generateFullMappingCsv(mappings: UrlMapping[]): string {
 }
 
 /**
+ * Generates XML Sitemap for 200 OK target URLs
+ */
+export function generateSitemap(mappings: UrlMapping[], targetDomain = ''): string {
+  const lines: string[] = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+  ];
+  
+  const includedUrls = new Set<string>();
+
+  for (const m of mappings) {
+    if (m.targetUrl && m.status !== 'GONE_410' && m.target && m.target.statusCode === 200) {
+      const tgtUrl = targetDomain ? `https://${targetDomain}${m.target.normalizedPath}` : m.targetUrl;
+      if (!includedUrls.has(tgtUrl)) {
+        includedUrls.add(tgtUrl);
+        lines.push('  <url>');
+        lines.push(`    <loc>${tgtUrl}</loc>`);
+        lines.push(`    <changefreq>weekly</changefreq>`);
+        lines.push(`    <priority>0.8</priority>`);
+        lines.push('  </url>');
+      }
+    }
+  }
+
+  lines.push('</urlset>');
+  return lines.join('\n');
+}
+
+/**
  * Master dispatcher for exports
  */
 export function exportRedirects(
   format: ExportFormat,
   mappings: UrlMapping[],
   patterns: SynthesizedPattern[] = [],
-  targetDomain = ''
-): { content: string; filename: string; mimeType: string } {
+  targetDomain = '',
+  stats: MigrationSummaryStats | null = null,
+  projectMetadata: ProjectMetadata | null = null,
+  checklistProgress: Record<string, boolean> = {},
+  targetEntries: any[] = []
+): { content: string | Uint8Array; filename: string; mimeType: string } {
   switch (format) {
     case 'HTACCESS':
       return {
@@ -348,6 +421,21 @@ export function exportRedirects(
         filename: 'wordpress_redirection.csv',
         mimeType: 'text/csv'
       };
+    case 'FULL_AUDIT_EXCEL':
+      return {
+        content: generateFullAuditExcel(mappings, stats, projectMetadata, checklistProgress),
+        filename: 'migration_playbook_and_audit.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      };
+    case 'SITEMAP_XML':
+      return {
+        // Fallback to mappings-based sitemap if targetEntries is empty or missing
+        content: targetEntries.length > 0 
+          ? generateXmlSitemap(targetEntries) 
+          : generateSitemap(mappings, targetDomain),
+        filename: 'sitemap.xml',
+        mimeType: 'application/xml'
+      };
     case 'FULL_MAPPING_CSV':
     default:
       return {
@@ -356,6 +444,110 @@ export function exportRedirects(
         mimeType: 'text/csv'
       };
   }
+}
+
+/**
+ * Generates an Excel Workbook with multiple sheets: 
+ * Sheet 1: Mappings, Sheet 2: Playbook
+ */
+export function generateFullAuditExcel(
+  mappings: UrlMapping[],
+  stats: MigrationSummaryStats | null,
+  projectMetadata: ProjectMetadata | null,
+  checklistProgress: Record<string, boolean>
+): Uint8Array {
+  const wb = XLSX.utils.book_new();
+
+  // --- SHEET 1: Redirect Mappings ---
+  const targetCounts = new Map<string, number>();
+  for (const m of mappings) {
+    if (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED') {
+      const url = m.targetUrl.toLowerCase();
+      targetCounts.set(url, (targetCounts.get(url) || 0) + 1);
+    }
+  }
+
+  const mappingRows = mappings.map(m => {
+    const getError = (types: string[]) => {
+      const disc = m.discrepancies.find(d => types.includes(d.type));
+      return disc ? `[${disc.severity}] ${disc.title}` : '';
+    };
+
+    return {
+      'Source URL': m.source.url,
+      'Source Path': m.source.normalizedPath,
+      'Source Title': m.source.title,
+      'Source Meta Description': m.source.metaDescription,
+      'Source H1': m.source.h1,
+      'Source Canonical': m.source.canonical,
+      'Source Inlinks': m.source.inlinks,
+      'Source Status': m.source.statusCode,
+      'Source Indexability': m.source.indexability,
+      'Recommended Action': (m.status === 'GONE_410' || m.statusCode === 410) ? '410 Gone' : (m.targetUrl && m.targetUrl !== m.source.url ? '301 Redirect' : 'Unmapped'),
+      'Target URL': (m.status === 'GONE_410' || m.statusCode === 410) ? 'N/A' : (m.target ? m.target.url : m.targetUrl),
+      'Target Path': (m.status === 'GONE_410' || m.statusCode === 410) ? 'N/A' : (m.target ? m.target.normalizedPath : m.targetUrl),
+      'Target Title': m.target ? m.target.title : '',
+      'Target Meta Description': m.target ? m.target.metaDescription : '',
+      'Target H1': m.target ? m.target.h1 : '',
+      'Target Canonical': m.target ? m.target.canonical : '',
+      'Target Status': m.target ? m.target.statusCode : '',
+      'Target Indexability': m.target ? m.target.indexability : '',
+      'Is Conflict': (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED' && (targetCounts.get(m.targetUrl.toLowerCase()) || 0) > 1) ? 'TRUE' : 'FALSE',
+      'Notes': m.notes || '',
+      'Match Confidence (%)': m.confidenceScore,
+      'Strategy': m.strategy,
+      'Status': m.status,
+      'Risk Score (0-100)': m.riskScore,
+      'Discrepancies Count': m.discrepancies.length,
+      'Error: Target Status': getError(['TARGET_404_OR_500']),
+      'Error: Indexability': getError(['NOINDEX_ON_TARGET']),
+      'Error: Canonical': getError(['CANONICAL_MISMATCH']),
+      'Error: Word Count': getError(['WORD_COUNT_COLLAPSE']),
+      'Error: Title': getError(['TITLE_DISCREPANCY']),
+      'Error: H1': getError(['H1_MISSING']),
+      'Error: Meta Description': getError(['META_DESCRIPTION_DROPPED']),
+      'Error: Routing': getError(['HUB_TRAP_SOFT_404', 'SOFT_404_HOMEPAGE_TRAP']),
+      'Discrepancies Summary': m.discrepancies.map(d => `[${d.severity}] ${d.title}`).join(' | ')
+    };
+  });
+  
+  const wsMappings = XLSX.utils.json_to_sheet(mappingRows);
+  XLSX.utils.book_append_sheet(wb, wsMappings, 'Mapping & Audit');
+
+  // --- SHEET 2: Playbook Data ---
+  const playbookRows: any[] = [];
+  
+  if (projectMetadata) {
+    playbookRows.push(
+      { Phase: 'Project Meta', Category: 'Info', Task: 'Project Name', Status: '', Details: projectMetadata.projectName },
+      { Phase: 'Project Meta', Category: 'Info', Task: 'Client Name', Status: '', Details: projectMetadata.clientName },
+      { Phase: 'Project Meta', Category: 'Info', Task: 'Migration Date', Status: '', Details: projectMetadata.targetDate },
+      { Phase: 'Project Meta', Category: 'Info', Task: 'CMS / Platform', Status: '', Details: projectMetadata.platform },
+      { Phase: 'Project Meta', Category: 'Integrations', Task: 'Google Search Console', Status: projectMetadata.hasGSC ? 'Connected' : 'Pending', Details: '' },
+      { Phase: 'Project Meta', Category: 'Integrations', Task: 'Google Analytics 4', Status: projectMetadata.hasGA4 ? 'Connected' : 'Pending', Details: '' },
+      { Phase: 'Project Meta', Category: 'Integrations', Task: 'SEMrush / Ahrefs', Status: projectMetadata.hasSEMrush ? 'Connected' : 'Pending', Details: '' }
+    );
+  }
+
+  // Combine old + new checklists
+  for (const checklist of Object.values(MIGRATION_CHECKLISTS)) {
+    for (const phase of checklist.phases) {
+      for (const item of phase.items) {
+        playbookRows.push({
+          Phase: phase.title,
+          Category: checklist.title,
+          Task: item.label,
+          Status: checklistProgress[item.id] ? "Done" : "Pending",
+          Details: ""
+        });
+      }
+    }
+  }
+
+  const wsPlaybook = XLSX.utils.json_to_sheet(playbookRows);
+  XLSX.utils.book_append_sheet(wb, wsPlaybook, 'Migration Playbook');
+
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 }
 
 /**

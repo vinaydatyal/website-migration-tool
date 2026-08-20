@@ -20,6 +20,7 @@ export interface CrawlEntry {
   wordCount: number;
   inlinks: number;
   outlinks: number;
+  outgoingLinks?: string[];
   redirectUrl?: string;
   redirectType?: string;
   responseTime?: number;
@@ -27,6 +28,14 @@ export interface CrawlEntry {
   crawlDepth?: number;
   visits?: number;
   revenue?: number;
+  
+  // Analytics Metrics
+  clicks?: number;
+  impressions?: number;
+  ctr?: number;
+  position?: number;
+  sessions?: number;
+  pageviews?: number;
 }
 
 export type MatchStrategy = 
@@ -59,6 +68,8 @@ export interface UrlMapping {
   reasons: string[];
   discrepancies: ParityDiscrepancy[];
   patternId?: string;
+  notes?: string;
+  isHidden?: boolean;
 }
 
 export type DiscrepancySeverity = 'CRITICAL' | 'HIGH' | 'WARNING' | 'INFO';
@@ -71,9 +82,11 @@ export type DiscrepancyType =
   | 'TITLE_DISCREPANCY'
   | 'H1_MISSING'
   | 'HIGH_EQUITY_UNMAPPED'
+  | 'HIGH_EQUITY_UNMAPPED'
   | 'META_DESCRIPTION_DROPPED'
   | 'REDIRECT_CHAIN_RISK'
   | 'SOFT_404_HOMEPAGE_TRAP'
+  | 'HUB_TRAP_SOFT_404'
   | 'INFO_ONLY';
 
 export interface ParityDiscrepancy {
@@ -115,6 +128,21 @@ export interface MigrationSummaryStats {
   totalInlinksAtRisk: number;
 }
 
+export interface ProjectMetadata {
+  projectName?: string;
+  clientName?: string;
+  targetDate?: string;
+  platform?: string;
+  hasGSC?: boolean;
+  hasGA4?: boolean;
+  hasSEMrush?: boolean;
+  gscPropertyUrl?: string;
+  ga4MeasurementId?: string;
+  semrushProjectId?: string;
+  baselineIndexedPages?: number;
+  baselineOrganicClicks?: number;
+}
+
 export interface MigrationProject {
   id: string;
   name: string;
@@ -129,6 +157,8 @@ export interface MigrationProject {
   patterns: SynthesizedPattern[];
   stats: MigrationSummaryStats;
   checklistProgress?: Record<string, boolean>;
+  metadata?: ProjectMetadata;
+  resolvedDiscrepancies?: Record<string, boolean>;
   confidenceThreshold: number; // default 75
   createdAt: string;
   updatedAt: string;
@@ -142,7 +172,9 @@ export type ExportFormat =
   | 'NEXTJS_CONFIG' 
   | 'WORDPRESS_REDIRECTION_CSV' 
   | 'FULL_MAPPING_CSV' 
-  | 'SEO_AUDIT_REPORT_CSV';
+  | 'SEO_AUDIT_REPORT_CSV'
+  | 'FULL_AUDIT_EXCEL'
+  | 'SITEMAP_XML';
 
 export interface MigrationSnapshot {
   id: string;

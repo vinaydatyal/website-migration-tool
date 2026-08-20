@@ -9,7 +9,11 @@ import {
   ExternalLink,
   ShieldCheck,
   FileWarning,
-  Download
+  Download,
+  CheckCircle,
+  XCircle,
+  Ban,
+  MessageSquare
 } from 'lucide-react';
 import { UrlMapping, DiscrepancySeverity, ParityDiscrepancy } from '../types/migration';
 import { FilterBuilder, FilterCondition } from './FilterBuilder';
@@ -17,9 +21,19 @@ import { exportDiscrepanciesToCsv } from '../utils/exporters';
 
 interface SeoParityViewProps {
   mappings: UrlMapping[];
+  resolvedDiscrepancies?: Record<string, boolean>;
+  onToggleDiscrepancyResolution?: (id: string) => void;
+  onUpdateMapping?: (id: string, updates: Partial<UrlMapping>) => void;
+  onBulkUpdateMappings?: (updates: { id: string, updates: Partial<UrlMapping> }[]) => void;
 }
 
-export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
+export const SeoParityView: React.FC<SeoParityViewProps> = ({ 
+  mappings, 
+  resolvedDiscrepancies = {}, 
+  onToggleDiscrepancyResolution,
+  onUpdateMapping,
+  onBulkUpdateMappings
+}) => {
   const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'WARNING'>('ALL');
   const [errorTypeFilter, setErrorTypeFilter] = useState<string>('ALL');
   const [conditions, setConditions] = useState<FilterCondition[]>([
@@ -27,6 +41,8 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
   ]);
   const [deferredConditions, setDeferredConditions] = useState<FilterCondition[]>(conditions);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState<string>('');
 
   // Debounce filter inputs for performance
   React.useEffect(() => {
@@ -62,6 +78,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
       targetUrl: m.target ? m.target.url : m.targetUrl,
       targetPath: m.target ? m.target.normalizedPath : m.targetUrl,
       sourceInlinks: m.source.inlinks,
+      isResolved: resolvedDiscrepancies[d.id] || false
     }))
   );
 
@@ -136,6 +153,25 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulkApprove = () => {
+    if (!onBulkUpdateMappings) return;
+    const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+    const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+    onBulkUpdateMappings(mappingIds.map(id => ({ id, updates: { status: 'APPROVED' } })));
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulk410 = () => {
+    if (!onBulkUpdateMappings) return;
+    const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+    const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+    onBulkUpdateMappings(mappingIds.map(id => ({ 
+      id, 
+      updates: { status: 'GONE_410', statusCode: 410, targetUrl: '/410-gone', strategy: 'GONE_410' } 
+    })));
     setSelectedItemIds(new Set());
   };
 
@@ -260,17 +296,35 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
 
       {/* Bulk Action Banner */}
       {selectedItemIds.size > 0 && (
-        <div className="bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/30 rounded-xl p-3 flex items-center justify-between text-brand-600 dark:text-brand-300 animate-in fade-in slide-in-from-top-2 shadow-sm">
+        <div className="bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between text-brand-600 dark:text-brand-300 animate-in fade-in slide-in-from-top-2 shadow-sm gap-3">
           <div className="text-sm font-semibold pl-2">
             {selectedItemIds.size} discrepancy{selectedItemIds.size !== 1 ? 'ies' : ''} selected
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {onBulkUpdateMappings && (
+              <>
+                <button
+                  onClick={handleBulkApprove}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 hover:bg-emerald-200 dark:hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Bulk Approve</span>
+                </button>
+                <button
+                  onClick={handleBulk410}
+                  className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                >
+                  <Ban className="h-4 w-4" />
+                  <span>Bulk 410</span>
+                </button>
+              </>
+            )}
             <button
               onClick={handleExportSelected}
-              className="px-4 py-1.5 rounded-lg bg-brand-100 dark:bg-brand-500/20 hover:bg-brand-200 dark:hover:bg-brand-500/30 text-brand-600 dark:text-brand-300 text-xs font-bold flex items-center space-x-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-brand-100 dark:bg-brand-500/20 hover:bg-brand-200 dark:hover:bg-brand-500/30 text-brand-600 dark:text-brand-300 text-xs font-bold flex items-center space-x-1.5 transition-colors"
             >
               <Download className="h-4 w-4" />
-              <span>Export Selected to CSV</span>
+              <span>Export CSV</span>
             </button>
           </div>
         </div>
@@ -346,7 +400,6 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
                   <p className="text-xs text-slate-600 dark:text-slate-300 pl-8">{group.description}</p>
                 </div>
 
-                {/* Group Items Table */}
                 <div className="w-full overflow-x-auto">
                   <table className="w-full text-left text-xs whitespace-nowrap">
                     <thead>
@@ -364,11 +417,13 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
                         <th className="py-3 px-4 font-semibold">Target URL (New)</th>
                         <th className="py-3 px-4 font-semibold">Target Value</th>
                         <th className="py-3 px-4 text-center font-semibold">Links</th>
+                        {onToggleDiscrepancyResolution && <th className="py-3 px-4 text-center font-semibold">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800/30">
                       {group.items.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                        <React.Fragment key={item.id}>
+                        <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors ${item.isResolved ? 'opacity-50 bg-slate-50 dark:bg-slate-900/30' : ''}`}>
                           <td className="py-3 px-4 text-center">
                             <input 
                               type="checkbox" 
@@ -427,8 +482,97 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({ mappings }) => {
                               )}
                             </div>
                           </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex flex-col gap-1 items-center">
+                              {onToggleDiscrepancyResolution && (
+                                <button
+                                  onClick={() => onToggleDiscrepancyResolution(item.id)}
+                                  className={`flex items-center justify-center gap-1 mx-auto px-2 py-1 text-[10px] font-bold uppercase rounded-md transition-colors ${item.isResolved ? 'bg-slate-200 text-slate-500 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:hover:bg-emerald-500/20'}`}
+                                  title={item.isResolved ? "Unresolve" : "Mark as Resolved"}
+                                >
+                                  {item.isResolved ? <XCircle size={12} /> : <CheckCircle size={12} />}
+                                  {item.isResolved ? 'Undo' : 'Resolve'}
+                                </button>
+                              )}
+                              
+                              {onUpdateMapping && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <button
+                                    onClick={() => onUpdateMapping(item.mappingId, { status: 'APPROVED' })}
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                                    title="Approve Mapping"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => onUpdateMapping(item.mappingId, { status: 'GONE_410' })}
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                                    title="Mark as 410 Gone"
+                                  >
+                                    <Ban className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (editingNoteId === item.mappingId) {
+                                        setEditingNoteId(null);
+                                      } else {
+                                        setEditingNoteId(item.mappingId);
+                                        const mapping = mappings.find(m => m.id === item.mappingId);
+                                        setNoteInput(mapping?.notes || '');
+                                      }
+                                    }}
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
+                                    title="Add Note"
+                                  >
+                                    <MessageSquare className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
                         </tr>
-                      ))}
+                        {editingNoteId === item.mappingId && (
+                          <tr className="bg-slate-50 dark:bg-slate-900/30">
+                            <td colSpan={7} className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={noteInput}
+                                  onChange={(e) => setNoteInput(e.target.value)}
+                                  placeholder="Add a note to this mapping..."
+                                  className="flex-1 px-3 py-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && onUpdateMapping) {
+                                      onUpdateMapping(item.mappingId, { notes: noteInput });
+                                      setEditingNoteId(null);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingNoteId(null);
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={() => {
+                                    if (onUpdateMapping) {
+                                      onUpdateMapping(item.mappingId, { notes: noteInput });
+                                      setEditingNoteId(null);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded bg-brand-500 text-white text-xs font-semibold hover:bg-brand-600"
+                                >
+                                  Save Note
+                                </button>
+                                <button
+                                  onClick={() => setEditingNoteId(null)}
+                                  className="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-300 dark:hover:bg-slate-700"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
                     </tbody>
                   </table>
                 </div>

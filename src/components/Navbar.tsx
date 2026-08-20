@@ -11,7 +11,10 @@ import {
   Save,
   Network,
   Sun,
-  Moon
+  Moon,
+  HelpCircle,
+  LayoutGrid,
+  Database
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { slugify } from '../utils/text';
@@ -24,8 +27,10 @@ interface NavbarProps {
   onReset: () => void;
   onRestartPipeline?: () => void;
   onOpenExport: () => void;
+  onOpenImportMap?: () => void;
   onOpenHistory: () => void;
   onOpenProjectManager: () => void;
+  onOpenHelp: () => void;
   onNewProject: () => void;
   hasData: boolean;
   projectName?: string;
@@ -39,8 +44,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onReset,
   onRestartPipeline,
   onOpenExport,
+  onOpenImportMap,
   onOpenHistory,
   onOpenProjectManager,
+  onOpenHelp,
   onNewProject,
   hasData,
   projectName = 'Untitled Project',
@@ -67,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Left: Branding & Project */}
-          <div className="flex-1 flex items-center justify-start space-x-4">
+          <div className="flex-shrink-0 flex items-center justify-start space-x-4">
             
             {/* Projects Button */}
             <button 
@@ -119,8 +126,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Center Navigation Tabs (when data is loaded) */}
           {hasData && (
-            <div className="flex-none flex justify-center hidden md:flex">
-              <nav className="flex items-center space-x-1 bg-slate-100/80 dark:bg-slate-900/90 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner">
+            <div className="flex-1 flex justify-center hidden lg:flex px-4 min-w-0">
+              <nav className="flex items-center space-x-1 bg-slate-100/80 dark:bg-slate-900/90 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto no-scrollbar">
               <Link
                 to={`/${projectSlug}/dashboard`}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -177,6 +184,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Architecture</span>
               </Link>
               <Link
+                to={`/${projectSlug}/crawl-data`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                  activeTab === 'crawl-data'
+                    ? 'bg-brand-500 text-white dark:text-slate-950 shadow-md shadow-brand-500/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <Database className="h-3.5 w-3.5" />
+                <span>Crawl Data</span>
+              </Link>
+              <Link
                 to={`/${projectSlug}/regex`}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   activeTab === 'regex'
@@ -196,13 +214,34 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
                 <span>Playbook</span>
-                </Link>
+              </Link>
+              <Link
+                to={`/${projectSlug}/validation`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                  activeTab === 'validation'
+                    ? 'bg-brand-500 text-white dark:text-slate-950 shadow-md shadow-brand-500/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Validation</span>
+              </Link>
+              <Link
+                to={`/${projectSlug}/link-audit`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === 'link-audit'
+                    ? 'bg-brand-500 text-white dark:text-slate-950 shadow-md shadow-brand-500/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                Link Audit
+              </Link>
             </nav>
             </div>
           )}
 
           {/* Right: Actions */}
-          <div className="flex-1 flex items-center justify-end space-x-2.5">
+          <div className="flex-shrink-0 flex items-center justify-end space-x-2.5 ml-auto">
             <button
               onClick={toggleTheme}
               className="p-2 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mr-2"
@@ -213,6 +252,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <Sun className="h-5 w-5" />
               )}
+            </button>
+            
+            <button
+              onClick={onOpenHelp}
+              className="p-2 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mr-2 flex items-center justify-center"
+              title="Help & Knowledge Base"
+            >
+              <HelpCircle className="h-5 w-5" />
             </button>
             
             {!hasData ? (
@@ -255,6 +302,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                     title="Re-run Matching Algorithm"
                   >
                     <Sparkles className="h-4 w-4" />
+                  </button>
+                )}
+
+                {onOpenImportMap && (
+                  <button
+                    onClick={onOpenImportMap}
+                    className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer mr-2"
+                  >
+                    <Download className="h-3.5 w-3.5 stroke-[2.5] rotate-180" />
+                    <span>Import Map</span>
                   </button>
                 )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useDeferredValue } from 'react';
 import { 
   Search, 
   Filter, 
@@ -12,9 +12,16 @@ import {
   ExternalLink,
   ShieldAlert,
   ChevronDown,
-  Layers,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  LayoutGrid,
+  FileWarning,
+  Copy,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { UrlMapping, CrawlEntry } from '../types/migration';
 import { exportRedirects } from '../utils/exporters';
@@ -27,58 +34,90 @@ interface UrlMappingTableProps {
   mappings: UrlMapping[];
   targetEntries: CrawlEntry[];
   onUpdateMapping: (mappingId: string, updates: Partial<UrlMapping>) => void;
+  onBulkUpdateMappings?: (updatesList: { id: string, updates: Partial<UrlMapping> }[]) => void;
+  onFilteredMappingsChange?: (mappings: UrlMapping[]) => void;
   confidenceThreshold: number;
   onUpdateThreshold: (threshold: number) => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
+  sourceEntries?: CrawlEntry[] | null;
 }
 
 export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
   mappings,
   targetEntries,
   onUpdateMapping,
+  onBulkUpdateMappings,
+  onFilteredMappingsChange,
   confidenceThreshold,
   onUpdateThreshold,
+  onUndo,
+  canUndo,
+  sourceEntries,
 }) => {
 
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'APPROVED' | 'NEEDS_REVIEW' | 'UNMAPPED' | 'HIGH_RISK' | 'GONE_410'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'APPROVED' | 'NEEDS_REVIEW' | 'UNMAPPED' | 'HIGH_RISK' | 'GONE_410' | 'CONFLICTS' | 'HIDDEN'>('ALL');
   const [strategyFilter, setStrategyFilter] = useState<string>('ALL');
   const [canonicalFilter, setCanonicalFilter] = useState<'ALL' | 'CANONICAL_ONLY'>('ALL');
   const [conditions, setConditions] = useState<FilterCondition[]>([
     { id: crypto.randomUUID(), operator: 'CONTAINS', value: '' }
   ]);
+  const deferredConditions = useDeferredValue(conditions);
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null);
   const [duplicateModalTarget, setDuplicateModalTarget] = useState<string | null>(null);
   const [selectedMappingIds, setSelectedMappingIds] = useState<Set<string>>(new Set());
+  const [sortConfig, setSortConfig] = useState<{ key: 'source' | 'target' | 'traffic' | 'confidence', direction: 'NONE' | 'ASC' | 'DESC' }>({ key: 'source', direction: 'NONE' });
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
   
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   
   const [isPending, startTransition] = React.useTransition();
-  const [deferredConditions, setDeferredConditions] = useState<FilterCondition[]>(conditions);
 
   // Defer search to prevent typing lag
   const updateCondition = (id: string, updates: Partial<FilterCondition>) => {
-    const newConditions = conditions.map(c => c.id === id ? { ...c, ...updates } : c);
-    setConditions(newConditions);
-    startTransition(() => {
-      setDeferredConditions(newConditions);
-    });
+    setConditions(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   };
 
   const addCondition = () => {
-    const newConditions = [...conditions, { id: crypto.randomUUID(), operator: 'CONTAINS' as const, value: '' }];
-    setConditions(newConditions);
-    startTransition(() => {
-      setDeferredConditions(newConditions);
-    });
+    setConditions(prev => [...prev, { id: crypto.randomUUID(), operator: 'CONTAINS' as const, value: '' }]);
   };
 
   const removeCondition = (id: string) => {
-    const newConditions = conditions.filter(c => c.id !== id);
-    setConditions(newConditions);
-    startTransition(() => {
-      setDeferredConditions(newConditions);
-    });
+    setConditions(prev => prev.filter(c => c.id !== id));
   };
+
+  const targetCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of mappings) {
+      if (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED') {
+        const url = m.targetUrl.toLowerCase();
+        counts.set(url, (counts.get(url) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [mappings]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0, approved: 0, needsReview: 0, unmapped: 0, highRisk: 0, gone410: 0, conflicts: 0, hidden: 0 };
+    for (const m of mappings) {
+      if (m.isHidden) {
+        counts.hidden++;
+        continue;
+      }
+      counts.all++;
+      if (m.status === 'APPROVED' || m.status === 'MANUAL') counts.approved++;
+      if (m.status === 'NEEDS_REVIEW') counts.needsReview++;
+      if (m.strategy === 'UNMAPPED') counts.unmapped++;
+      if (m.riskScore >= 50) counts.highRisk++;
+      if (m.status === 'GONE_410') counts.gone410++;
+      if (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED') {
+        const c = targetCounts.get(m.targetUrl.toLowerCase()) || 0;
+        if (c > 1) counts.conflicts++;
+      }
+    }
+    return counts;
+  }, [mappings, targetCounts]);
 
   // Filtered list of mappings
   const filteredMappings = useMemo(() => {
@@ -126,12 +165,20 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
 
       if (!passesConditions) return false;
 
+      if (statusFilter !== 'HIDDEN' && m.isHidden) return false;
+      if (statusFilter === 'HIDDEN' && !m.isHidden) return false;
+
       // Status filter
       if (statusFilter === 'APPROVED' && m.status !== 'APPROVED' && m.status !== 'MANUAL') return false;
       if (statusFilter === 'NEEDS_REVIEW' && m.status !== 'NEEDS_REVIEW') return false;
       if (statusFilter === 'UNMAPPED' && m.strategy !== 'UNMAPPED') return false;
       if (statusFilter === 'HIGH_RISK' && m.riskScore < 50) return false;
       if (statusFilter === 'GONE_410' && m.status !== 'GONE_410') return false;
+      if (statusFilter === 'CONFLICTS') {
+        if (!m.targetUrl || m.status === 'GONE_410' || m.strategy === 'UNMAPPED') return false;
+        const count = targetCounts.get(m.targetUrl.toLowerCase()) || 0;
+        if (count <= 1) return false;
+      }
 
       // Strategy filter
       if (strategyFilter !== 'ALL' && m.strategy !== strategyFilter) return false;
@@ -146,33 +193,49 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
     });
   }, [mappings, deferredConditions, statusFilter, strategyFilter, canonicalFilter]);
 
-  // Reset page when filters change
+  // Reset page when filters, sort, or pagination size change
   useEffect(() => {
     setCurrentPage(1);
     setSelectedMappingIds(new Set());
-  }, [deferredConditions, statusFilter, strategyFilter, canonicalFilter]);
+  }, [deferredConditions, statusFilter, strategyFilter, canonicalFilter, sortConfig, itemsPerPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredMappings.length / itemsPerPage));
+  useEffect(() => {
+    if (onFilteredMappingsChange) {
+      onFilteredMappingsChange(filteredMappings);
+    }
+  }, [filteredMappings, onFilteredMappingsChange]);
+
+  const sortedMappings = useMemo(() => {
+    if (sortConfig.direction === 'NONE') return filteredMappings;
+    return [...filteredMappings].sort((a, b) => {
+      let cmp = 0;
+      if (sortConfig.key === 'source') {
+        cmp = a.source.url.localeCompare(b.source.url);
+      } else if (sortConfig.key === 'target') {
+        const aTgt = a.targetUrl || '';
+        const bTgt = b.targetUrl || '';
+        cmp = aTgt.localeCompare(bTgt);
+      } else if (sortConfig.key === 'traffic') {
+        const visitsA = a.source.visits || 0;
+        const visitsB = b.source.visits || 0;
+        cmp = visitsA - visitsB;
+      } else if (sortConfig.key === 'confidence') {
+        cmp = a.confidenceScore - b.confidenceScore;
+      }
+      return sortConfig.direction === 'ASC' ? cmp : -cmp;
+    });
+  }, [filteredMappings, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedMappings.length / itemsPerPage));
   const paginatedMappings = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredMappings.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredMappings, currentPage]);
+    return sortedMappings.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedMappings, currentPage, itemsPerPage]);
 
   // Handle page change: reset selection
   useEffect(() => {
     setSelectedMappingIds(new Set());
   }, [currentPage]);
-
-  const targetCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const m of mappings) {
-      if (m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED') {
-        const url = m.targetUrl.toLowerCase();
-        counts.set(url, (counts.get(url) || 0) + 1);
-      }
-    }
-    return counts;
-  }, [mappings]);
 
   const handleApprove = useCallback((id: string) => {
     onUpdateMapping(id, { status: 'APPROVED' });
@@ -239,158 +302,286 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
     });
   }, []);
 
+  const handleSelectAllFiltered = useCallback(() => {
+    setSelectedMappingIds(new Set(filteredMappings.map(m => m.id)));
+  }, [filteredMappings]);
+
+  const allPageItemsSelected = paginatedMappings.length > 0 && paginatedMappings.every(m => selectedMappingIds.has(m.id));
+
   const handleSelectAll = useCallback(() => {
-    if (selectedMappingIds.size === paginatedMappings.length && paginatedMappings.length > 0) {
+    if (allPageItemsSelected) {
       setSelectedMappingIds(new Set());
     } else {
-      setSelectedMappingIds(new Set(paginatedMappings.map(m => m.id)));
+      const next = new Set(selectedMappingIds);
+      paginatedMappings.forEach(m => next.add(m.id));
+      setSelectedMappingIds(next);
     }
-  }, [paginatedMappings, selectedMappingIds]);
+  }, [paginatedMappings, selectedMappingIds, allPageItemsSelected]);
 
   const handleBulkApprove = useCallback(() => {
-    selectedMappingIds.forEach(id => {
-      onUpdateMapping(id, { status: 'APPROVED' });
-    });
+    if (onBulkUpdateMappings) {
+      const updates = Array.from(selectedMappingIds).map(id => ({
+        id,
+        updates: { status: 'APPROVED' as const }
+      }));
+      onBulkUpdateMappings(updates);
+    } else {
+      selectedMappingIds.forEach(id => {
+        onUpdateMapping(id, { status: 'APPROVED' });
+      });
+    }
     setSelectedMappingIds(new Set());
-  }, [selectedMappingIds, onUpdateMapping]);
+  }, [selectedMappingIds, onUpdateMapping, onBulkUpdateMappings]);
 
   const handleBulk410 = useCallback(() => {
-    selectedMappingIds.forEach(id => {
-      onUpdateMapping(id, { 
-        status: 'GONE_410', 
-        statusCode: 410,
-        targetUrl: '/410-gone',
-        strategy: 'GONE_410'
+    if (onBulkUpdateMappings) {
+      const updates = Array.from(selectedMappingIds).map(id => ({
+        id,
+        updates: { 
+          status: 'GONE_410' as const, 
+          statusCode: 410,
+          targetUrl: '/410-gone',
+          strategy: 'GONE_410' as const
+        }
+      }));
+      onBulkUpdateMappings(updates);
+    } else {
+      selectedMappingIds.forEach(id => {
+        onUpdateMapping(id, { 
+          status: 'GONE_410', 
+          statusCode: 410,
+          targetUrl: '/410-gone',
+          strategy: 'GONE_410'
+        });
       });
-    });
+    }
     setSelectedMappingIds(new Set());
-  }, [selectedMappingIds, onUpdateMapping]);
+  }, [selectedMappingIds, onUpdateMapping, onBulkUpdateMappings]);
 
   const handleBulk404 = useCallback(() => {
-    selectedMappingIds.forEach(id => {
-      onUpdateMapping(id, { 
-        status: 'MANUAL', 
-        statusCode: 404,
-        targetUrl: '/404-not-found',
-        strategy: 'MANUAL_OVERRIDE'
+    if (onBulkUpdateMappings) {
+      const updates = Array.from(selectedMappingIds).map(id => ({
+        id,
+        updates: { 
+          status: 'MANUAL' as const, 
+          statusCode: 404,
+          targetUrl: '/404-not-found',
+          strategy: 'MANUAL_OVERRIDE' as const
+        }
+      }));
+      onBulkUpdateMappings(updates);
+    } else {
+      selectedMappingIds.forEach(id => {
+        onUpdateMapping(id, { 
+          status: 'MANUAL', 
+          statusCode: 404,
+          targetUrl: '/404-not-found',
+          strategy: 'MANUAL_OVERRIDE'
+        });
       });
-    });
+    }
     setSelectedMappingIds(new Set());
-  }, [selectedMappingIds, onUpdateMapping]);
+  }, [selectedMappingIds, onUpdateMapping, onBulkUpdateMappings]);
+
+  const handleSort = (key: 'source' | 'target' | 'traffic' | 'confidence') => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        if (prev.direction === 'NONE') return { key, direction: 'ASC' };
+        if (prev.direction === 'ASC') return { key, direction: 'DESC' };
+        return { key: 'source', direction: 'NONE' };
+      }
+      return { key, direction: 'ASC' };
+    });
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Horizontal Status Tabs */}
+      <div className="flex overflow-x-auto pb-2 -mb-2 hide-scrollbar">
+        <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 w-full px-1">
+          <button
+            onClick={() => setStatusFilter('ALL')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'ALL'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            <span>All</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'ALL' ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.all}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('APPROVED')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'APPROVED'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Approved</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'APPROVED' ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.approved}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('NEEDS_REVIEW')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'NEEDS_REVIEW'
+                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <FileWarning className="h-4 w-4" />
+            <span>Needs Review</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'NEEDS_REVIEW' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.needsReview}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('UNMAPPED')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'UNMAPPED'
+                ? 'border-red-500 text-red-600 dark:text-red-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <X className="h-4 w-4" />
+            <span>Unmapped</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'UNMAPPED' ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.unmapped}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('HIGH_RISK')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'HIGH_RISK'
+                ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4" />
+            <span>High Risk</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'HIGH_RISK' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.highRisk}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('GONE_410')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'GONE_410'
+                ? 'border-slate-800 text-slate-800 dark:border-slate-300 dark:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Ban className="h-4 w-4" />
+            <span>410 Gone</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'GONE_410' ? 'bg-slate-800 text-white dark:bg-slate-700 dark:text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.gone410}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('CONFLICTS')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'CONFLICTS'
+                ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Copy className="h-4 w-4" />
+            <span>Conflicts</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'CONFLICTS' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.conflicts}
+            </span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('HIDDEN')}
+            className={`flex items-center space-x-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
+              statusFilter === 'HIDDEN'
+                ? 'border-slate-500 text-slate-700 dark:text-slate-300'
+                : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <EyeOff className="h-4 w-4" />
+            <span>Hidden</span>
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${statusFilter === 'HIDDEN' ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              {statusCounts.hidden}
+            </span>
+          </button>
+        </div>
+      </div>
+
       {/* Controls & Filter Bar */}
       <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
-        <div className="flex flex-col lg:flex-row items-start justify-between gap-6">
-          
-          {/* Left Column: Search & Filters */}
-          <div className="flex flex-col gap-4 w-full lg:w-2/3">
-            {/* Advanced Multi-Condition Search Builder */}
-            <FilterBuilder
-              conditions={conditions}
-              onAddCondition={addCondition}
-              onUpdateCondition={updateCondition}
-              onRemoveCondition={removeCondition}
-            />
-
-            {/* Dropdown Filters */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative w-full sm:w-1/2">
-                <select
-                  value={strategyFilter}
-                  onChange={(e) => setStrategyFilter(e.target.value)}
-                  className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-300 focus:outline-none focus:border-brand-500/50 cursor-pointer shadow-sm"
+        <div className="flex flex-col gap-4 w-full">
+          <div className="flex justify-between items-center w-full">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Filtering & Controls</h3>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <Filter className="h-4 w-4" />
+                <span>Advanced Filters</span>
+              </button>
+              {canUndo && (
+                <button
+                  onClick={onUndo}
+                  className="px-3 py-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/20 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors"
                 >
-                  <option value="ALL">All Strategies</option>
-                  <option value="EXACT_PATH">Exact Path</option>
-                  <option value="EXACT_TITLE_H1">Exact Title/H1</option>
-                  <option value="HIGH_FUZZY">High Fuzzy Match</option>
-                  <option value="MEDIUM_FUZZY">Medium Fuzzy Match</option>
-                  <option value="MANUAL_OVERRIDE">Manual Override</option>
-                  <option value="UNMAPPED">Unmapped</option>
-                  <option value="GONE_410">410 Gone</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
-              </div>
-
-              <div className="relative w-full sm:w-1/2">
-                <select
-                  value={canonicalFilter}
-                  onChange={(e) => setCanonicalFilter(e.target.value as any)}
-                  className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-300 focus:outline-none focus:border-brand-500/50 cursor-pointer shadow-sm"
-                >
-                  <option value="ALL">All Pages (Inc. Parameters)</option>
-                  <option value="CANONICAL_ONLY">Canonical Pages Only</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
-              </div>
+                  Undo Last Action
+                </button>
+              )}
             </div>
           </div>
+          
+          {isAdvancedFiltersOpen && (
+            <div className="flex flex-col gap-4 w-full pt-4 border-t border-slate-200 dark:border-slate-800">
+              {/* Advanced Multi-Condition Search Builder */}
+              <FilterBuilder
+                conditions={conditions}
+                onAddCondition={addCondition}
+                onUpdateCondition={updateCondition}
+                onRemoveCondition={removeCondition}
+              />
 
-          {/* Right Column: Status Quick Filters */}
-          <div className="flex flex-wrap items-start justify-start lg:justify-end gap-1.5 w-full lg:w-1/3 pt-2 lg:pt-0">
-            <button
-              onClick={() => setStatusFilter('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'ALL'
-                  ? 'bg-slate-800 dark:bg-slate-700 text-white'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              All ({mappings.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('APPROVED')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'APPROVED'
-                  ? 'bg-brand-50 dark:bg-brand-500/20 text-brand-600 dark:text-brand-300 border border-brand-200 dark:border-brand-500/30'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              Approved
-            </button>
-            <button
-              onClick={() => setStatusFilter('NEEDS_REVIEW')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'NEEDS_REVIEW'
-                  ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              Needs Review
-            </button>
-            <button
-              onClick={() => setStatusFilter('UNMAPPED')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'UNMAPPED'
-                  ? 'bg-red-50 dark:bg-red-500/20 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-500/30'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              Unmapped
-            </button>
-            <button
-              onClick={() => setStatusFilter('HIGH_RISK')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'HIGH_RISK'
-                  ? 'bg-purple-50 dark:bg-purple-500/20 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              High Risk
-            </button>
-            <button
-              onClick={() => setStatusFilter('GONE_410')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === 'GONE_410'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              410 Gone
-            </button>
-          </div>
+              {/* Dropdown Filters */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative w-full sm:w-1/2">
+                  <select
+                    value={strategyFilter}
+                    onChange={(e) => setStrategyFilter(e.target.value)}
+                    className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-300 focus:outline-none focus:border-brand-500/50 cursor-pointer shadow-sm"
+                  >
+                    <option value="ALL">All Strategies</option>
+                    <option value="EXACT_PATH">Exact Path</option>
+                    <option value="EXACT_TITLE_H1">Exact Title/H1</option>
+                    <option value="HIGH_FUZZY">High Fuzzy Match</option>
+                    <option value="MEDIUM_FUZZY">Medium Fuzzy Match</option>
+                    <option value="MANUAL_OVERRIDE">Manual Override</option>
+                    <option value="UNMAPPED">Unmapped</option>
+                    <option value="GONE_410">410 Gone</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
+                </div>
+
+                <div className="relative w-full sm:w-1/2">
+                  <select
+                    value={canonicalFilter}
+                    onChange={(e) => setCanonicalFilter(e.target.value as any)}
+                    className="appearance-none w-full pl-3 pr-8 py-2.5 rounded-xl bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-300 focus:outline-none focus:border-brand-500/50 cursor-pointer shadow-sm"
+                  >
+                    <option value="ALL">All Pages (Inc. Parameters)</option>
+                    <option value="CANONICAL_ONLY">Canonical Pages Only</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sensitivity Slider */}
@@ -422,6 +613,16 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
         <div className="bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/30 rounded-xl p-3 flex items-center justify-between text-brand-600 dark:text-brand-300 animate-in fade-in slide-in-from-top-2">
           <div className="text-sm font-semibold pl-2">
             {selectedMappingIds.size} mapping{selectedMappingIds.size !== 1 ? 's' : ''} selected
+            {allPageItemsSelected && selectedMappingIds.size < filteredMappings.length && (
+              <span className="ml-3 border-l border-brand-200 dark:border-brand-500/50 pl-3">
+                <button 
+                  onClick={handleSelectAllFiltered}
+                  className="hover:text-brand-800 dark:hover:text-brand-100 underline decoration-brand-500/50 font-bold transition-colors"
+                >
+                  Select all {filteredMappings.length} mappings in filter
+                </button>
+              </span>
+            )}
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -445,27 +646,67 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
               <Ban className="h-4 w-4" />
               <span>Mark as 410</span>
             </button>
+            <button
+              onClick={() => {
+                if (onBulkUpdateMappings) {
+                  onBulkUpdateMappings(Array.from(selectedMappingIds).map(id => ({ id, updates: { isHidden: true } })));
+                } else {
+                  selectedMappingIds.forEach(id => onUpdateMapping(id, { isHidden: true }));
+                }
+                setSelectedMappingIds(new Set());
+              }}
+              className="px-4 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+            >
+              <EyeOff className="h-4 w-4" />
+              <span>Hide Selected</span>
+            </button>
+            <button
+              onClick={() => {
+                if (onBulkUpdateMappings) {
+                  onBulkUpdateMappings(Array.from(selectedMappingIds).map(id => ({ id, updates: { isHidden: false } })));
+                } else {
+                  selectedMappingIds.forEach(id => onUpdateMapping(id, { isHidden: false }));
+                }
+                setSelectedMappingIds(new Set());
+              }}
+              className="px-4 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+            >
+              <Eye className="h-4 w-4" />
+              <span>Unhide Selected</span>
+            </button>
           </div>
         </div>
       )}
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xl dark:shadow-2xl flex flex-col flex-1 min-h-0">
         <div className="overflow-auto flex-1 w-full relative">
-          <div className="w-full text-left text-xs min-w-[800px] block">
-            <div className="bg-slate-50 dark:bg-slate-950/90 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 flex">
+          <div className="w-full text-left text-xs md:min-w-[800px] block">
+            <div className="bg-slate-50 dark:bg-slate-950/90 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 hidden md:flex">
               <div className="py-3.5 pl-4 pr-2 shrink-0 flex items-center justify-center">
                 <input
                   type="checkbox"
-                  checked={paginatedMappings.length > 0 && selectedMappingIds.size === paginatedMappings.length}
+                  checked={allPageItemsSelected}
                   onChange={handleSelectAll}
                   className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 focus:ring-offset-0 cursor-pointer"
                 />
               </div>
-              <div className="py-3.5 px-3 w-[35%] shrink-0">Source URL (Old Site)</div>
-              <div className="py-3.5 px-4 w-[35%] shrink-0">301 Target URL (New Site)</div>
-              <div className="py-3.5 px-4 w-32 shrink-0 text-left">Traffic</div>
-              <div className="py-3.5 px-4 text-center w-24 shrink-0">Confidence</div>
-              <div className="py-3.5 px-4 text-right w-28 shrink-0">Actions</div>
+              <div className="py-3.5 px-3 w-[35%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('source')}>
+                <span>Source URL (Old Site)</span>
+                {sortConfig.key !== 'source' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+              </div>
+              <div className="py-3.5 px-4 w-[35%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('target')}>
+                <span>301 Target URL (New Site)</span>
+                {sortConfig.key !== 'target' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+              </div>
+              <div className="py-3.5 px-4 w-32 shrink-0 text-left flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('traffic')}>
+                <span>Traffic</span>
+                {sortConfig.key !== 'traffic' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+              </div>
+              <div className="py-3.5 px-4 text-center w-24 shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('confidence')}>
+                <span>Confidence</span>
+                {sortConfig.key !== 'confidence' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+              </div>
+              <div className="py-3.5 px-4 text-right w-36 shrink-0">Actions</div>
             </div>
 
             <div className="w-full relative">
@@ -484,9 +725,10 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
                       m={m}
                       isEditing={isEditing}
                       targetEntries={targetEntries}
-                      targetCount={targetCounts.get(m.targetUrl.toLowerCase()) || 0}
+                      targetCount={targetCounts.get((m.targetUrl || '').toLowerCase()) || 0}
                       isSelected={selectedMappingIds.has(m.id)}
                       onToggleSelect={handleToggleSelect}
+                      onToggleHide={(id, isHidden) => onUpdateMapping(id, { isHidden })}
                       onApprove={handleApprove}
                       onSet410={handleSet410}
                       onSaveCustomTarget={handleSaveCustomTarget}
@@ -511,7 +753,22 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
               <span className="font-semibold text-slate-900 dark:text-white">{filteredMappings.length}</span> results
             </div>
             
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Rows per page:</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 rounded-md px-2 py-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-sm"
+                >
+                  <option value={10}>10</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-2">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
@@ -533,6 +790,7 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
               </button>
             </div>
           </div>
+        </div>
         )}
       </div>
 
