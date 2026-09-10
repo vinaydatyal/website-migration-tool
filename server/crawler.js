@@ -265,10 +265,15 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         // Speed hack: Block heavy non-HTML resources
         await workerPage.setRequestInterception(true);
         workerPage.on('request', (req) => {
-          if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-            req.abort();
-          } else {
-            req.continue();
+          if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
+          try {
+            if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+              req.abort().catch(() => {});
+            } else {
+              req.continue().catch(() => {});
+            }
+          } catch (err) {
+            // Ignore synchronous errors if the page closed before the request resolved
           }
         });
 
