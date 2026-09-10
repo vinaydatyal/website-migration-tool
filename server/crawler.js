@@ -13,6 +13,7 @@ function normalizeUrl(url) {
 export async function crawlSite(startUrl, config, onProgress, getIsStopped, getIsPaused, initialState = null) {
   const browser = await puppeteer.launch({
     headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
   
