@@ -3,7 +3,7 @@ services:
     name: website-migration-tool
     env: node
     plan: free
-    buildCommand: npm install && npm run build && npx puppeteer browsers install chrome
+    buildCommand: npm install --include=dev && npm run build && npx puppeteer browsers install chrome
     startCommand: npm start
     envVars:
       - key: NODE_ENV
