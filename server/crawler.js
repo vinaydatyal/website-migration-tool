@@ -121,6 +121,77 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   // The initial page used for setup/auth is no longer needed, close it to free memory
   if (page) await page.close().catch(() => {});
 
+  // Sitemap Discovery (only on fresh start)
+  if (!initialState && !getIsStopped?.() && !getIsPaused?.()) {
+    onProgress({ type: 'progress', message: `Discovering sitemaps for ${domain}...`, current: 0, total: 0 });
+    try {
+      const parsedUrl = new URL(startUrl);
+      const origin = `${parsedUrl.protocol}//${parsedUrl.host}`;
+      let sitemapUrls = [];
+      
+      const robotsResponse = await fetch(`${origin}/robots.txt`).catch(() => null);
+      if (robotsResponse && robotsResponse.ok) {
+        const robotsText = await robotsResponse.text();
+        const matches = robotsText.matchAll(/Sitemap:\s*(https?:\/\/[^\s]+)/gi);
+        for (const match of matches) {
+          sitemapUrls.push(match[1]);
+        }
+      }
+      
+      if (sitemapUrls.length === 0) {
+        sitemapUrls.push(`${origin}/sitemap.xml`);
+      }
+
+      const fetchSitemap = async (sUrl) => {
+        try {
+          const res = await fetch(sUrl).catch(() => null);
+          if (!res || !res.ok) return [];
+          const text = await res.text();
+          const urls = [];
+          
+          if (text.includes('<sitemapindex')) {
+             const nestedMatches = text.matchAll(/<loc>(.*?)<\/loc>/g);
+             for (const m of nestedMatches) {
+                const nestedUrls = await fetchSitemap(m[1].trim());
+                urls.push(...nestedUrls);
+             }
+          } else {
+             const locMatches = text.matchAll(/<loc>(.*?)<\/loc>/g);
+             for (const m of locMatches) {
+                urls.push(m[1].trim());
+             }
+          }
+          return urls;
+        } catch(e) {
+          return [];
+        }
+      };
+
+      const addedFromSitemap = new Set();
+      for (const sitemapUrl of sitemapUrls) {
+         const discovered = await fetchSitemap(sitemapUrl);
+         for (const dUrl of discovered) {
+           const normalized = normalizeUrl(dUrl);
+           if (normalized && !visited.has(normalized) && !addedFromSitemap.has(normalized)) {
+              let shouldAdd = true;
+              if (exclusionRegex && exclusionRegex.test(normalized)) shouldAdd = false;
+              try { if (new URL(normalized).hostname !== domain) shouldAdd = false; } catch { shouldAdd = false; }
+              
+              if (shouldAdd) {
+                 toVisit.push({ url: dUrl, depth: 1 });
+                 addedFromSitemap.add(normalized);
+              }
+           }
+         }
+      }
+      if (addedFromSitemap.size > 0) {
+         onProgress({ type: 'progress', message: `Found ${addedFromSitemap.size} URLs via Sitemap!`, current: 0, total: addedFromSitemap.size });
+      }
+    } catch(err) {
+       console.error('Sitemap discovery error:', err);
+    }
+  }
+
   await new Promise((resolve) => {
     const processNext = async () => {
       // 1. Check external termination signals
