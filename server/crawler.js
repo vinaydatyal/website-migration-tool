@@ -271,9 +271,22 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           }
         });
 
-        // 15s timeout to prevent hanging on bad connections
-        const response = await workerPage.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        const statusCode = response ? response.status() : 500;
+        // Wait for 'networkidle2' to allow React/Vue apps to fetch data and render DOM
+        let response = null;
+        try {
+          response = await workerPage.goto(normalized, { waitUntil: 'networkidle2', timeout: 15000 });
+        } catch (navError) {
+          // If networkidle2 times out (e.g. due to long-polling APIs), don't throw. 
+          // The DOM is likely already rendered, so we just catch the timeout.
+          if (!navError.message.includes('Timeout')) {
+            throw navError;
+          }
+        }
+        
+        // Give the JS engine an extra 1.5 seconds to parse and paint client-side routes
+        await workerPage.evaluate(() => new Promise(resolve => setTimeout(resolve, 1500)));
+
+        const statusCode = response ? response.status() : 200;
         
         if (statusCode >= 400) {
           results.push({
