@@ -681,7 +681,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
-              disabled={isProcessing && crawlProgress.source?.status !== 'crawling'}
+              disabled={crawlProgress.source?.status === 'crawling' || crawlProgress.source?.status === 'starting'}
             />
             
             {crawlProgress.source?.status === 'crawling' || crawlProgress.source?.status === 'starting' ? (
@@ -717,7 +717,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             ) : (
               <button 
                 onClick={() => handleCrawl('source')}
-                disabled={!sourceUrl || (isProcessing && crawlProgress.source?.status !== 'done')}
+                disabled={!sourceUrl || crawlProgress.source?.status === 'crawling' || crawlProgress.source?.status === 'starting'}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 {crawlProgress.source?.status === 'done' ? 'Restart Crawl' : (crawlProgress.source?.status === 'error' ? 'Restart Crawl' : 'Start Crawl')}
@@ -765,7 +765,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
-              disabled={isProcessing && crawlProgress.target?.status !== 'crawling'}
+              disabled={crawlProgress.target?.status === 'crawling' || crawlProgress.target?.status === 'starting'}
             />
             
             {crawlProgress.target?.status === 'crawling' || crawlProgress.target?.status === 'starting' ? (
@@ -801,7 +801,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             ) : (
               <button 
                 onClick={() => handleCrawl('target')}
-                disabled={!targetUrl || (isProcessing && crawlProgress.target?.status !== 'done')}
+                disabled={!targetUrl || crawlProgress.target?.status === 'crawling' || crawlProgress.target?.status === 'starting'}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 {crawlProgress.target?.status === 'done' ? 'Restart Crawl' : (crawlProgress.target?.status === 'error' ? 'Restart Crawl' : 'Start Crawl')}
