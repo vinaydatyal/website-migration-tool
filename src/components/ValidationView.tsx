@@ -70,10 +70,9 @@ export const ValidationView: React.FC<ValidationViewProps> = ({ mappings }) => {
         }
       };
       
-      eventSource.onerror = () => {
-        eventSource.close();
-        setError(`Connection error while validating.`);
-        setIsProcessing(false);
+      eventSource.onerror = (err) => {
+        console.warn("SSE connection dropped, auto-reconnecting...", err);
+        // Let the native EventSource auto-reconnect. 
       };
 
     } catch (err: any) {

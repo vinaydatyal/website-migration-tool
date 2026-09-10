@@ -324,17 +324,10 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       }
     };
     
-    eventSource.onerror = () => {
-      eventSource.close();
-      setCrawlProgress((prev: any) => {
-        if (prev[type]?.status === 'done' || prev[type]?.status === 'paused') return prev;
-        setError(`Connection error while crawling ${url}. Backend job may still be running.`);
-        setIsProcessing(false);
-        return {
-          ...prev,
-          [type]: { ...prev[type], status: 'error' }
-        };
-      });
+    eventSource.onerror = (err) => {
+      console.warn("SSE connection dropped, auto-reconnecting...", err);
+      // Let the native EventSource auto-reconnect. 
+      // The backend retains the job and will replay events from the beginning.
     };
   };
 
