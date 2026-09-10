@@ -94,6 +94,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   const maxPages = config?.maxPages || 500;
   const maxDepth = config?.maxDepth || 3;
   const rateLimit = config?.rateLimit || 0;
+  const maxConcurrency = config?.concurrency || 5; // Limits memory usage on Free Tiers
   
   let exclusionRegex = null;
   if (config?.exclusions) {
@@ -113,106 +114,178 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   }
 
   let crawledCount = initialState?.crawledCount || 0;
-  while (toVisit.length > 0 && crawledCount < maxPages) {
-    if (getIsStopped && getIsStopped()) {
-      onProgress({ type: 'progress', message: 'Crawl stopped by user', current: crawledCount, total: visited.size });
-      break;
-    }
-    if (getIsPaused && getIsPaused()) {
-      onProgress({ type: 'progress', message: 'Crawl paused by user', current: crawledCount, total: visited.size });
-      await browser.close();
-      return { 
-        isPaused: true, 
-        state: { toVisit, visited: Array.from(visited), results, crawledCount } 
-      };
-    }
-    
-    const { url: currentUrl, depth: currentDepth } = toVisit.shift();
-    const normalized = normalizeUrl(currentUrl);
-    
-    if (!normalized || visited.has(normalized)) continue;
-    
-    // Check exclusions
-    if (exclusionRegex && exclusionRegex.test(normalized)) continue;
-    
-    // Only crawl same domain
-    try {
-      const u = new URL(normalized);
-      if (u.hostname !== domain) continue;
-    } catch { continue; }
-    
-    visited.add(normalized);
-    
-    try {
+  let isCrawling = true;
+  let isPausedState = false;
+  let activeWorkers = 0;
+
+  // The initial page used for setup/auth is no longer needed, close it to free memory
+  if (page) await page.close().catch(() => {});
+
+  await new Promise((resolve) => {
+    const processNext = async () => {
+      // 1. Check external termination signals
+      if (getIsStopped && getIsStopped()) {
+        isCrawling = false;
+      }
+      if (getIsPaused && getIsPaused()) {
+        isCrawling = false;
+        isPausedState = true;
+      }
+
+      // 2. Base case: Finish the pool
+      if (!isCrawling || (toVisit.length === 0 && activeWorkers === 0) || crawledCount >= maxPages) {
+        if (activeWorkers === 0) resolve(); // All workers drained
+        return;
+      }
+
+      // 3. Waiting case: Idle until another worker adds links
+      if (toVisit.length === 0) return;
+      
+      // 4. Concurrency limit
+      if (activeWorkers >= maxConcurrency) return;
+
+      // 5. Claim a task
+      activeWorkers++;
+      const currentItem = toVisit.shift();
+      if (!currentItem) {
+        activeWorkers--;
+        processNext();
+        return;
+      }
+      
+      const { url: currentUrl, depth: currentDepth } = currentItem;
+      const normalized = normalizeUrl(currentUrl);
+
+      // 6. Validate URL
+      let shouldCrawl = true;
+      if (!normalized || visited.has(normalized)) shouldCrawl = false;
+      if (exclusionRegex && exclusionRegex.test(normalized)) shouldCrawl = false;
+      try {
+        const u = new URL(normalized);
+        if (u.hostname !== domain) shouldCrawl = false;
+      } catch { shouldCrawl = false; }
+
+      if (!shouldCrawl) {
+        activeWorkers--;
+        processNext(); // Try the next link immediately
+        return;
+      }
+
+      // 7. Mark visited and update progress
+      visited.add(normalized);
+      crawledCount++;
+
       onProgress({ 
         type: 'progress', 
         message: `Crawling ${normalized}`, 
-        current: crawledCount + 1, 
+        current: crawledCount, 
         total: visited.size + toVisit.length 
       });
-      
-      const response = await page.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 10000 });
-      const statusCode = response ? response.status() : 500;
-      
-      if (statusCode >= 400) {
-        results.push({
-          url: normalized,
-          title: '', metaDescription: '', h1: '', h2: '',
-          statusCode, wordCount: 0, inlinks: 1
-        });
-        crawledCount++;
-        continue;
-      }
 
-      const data = await page.evaluate(() => {
-        const title = document.title || '';
-        const metaDescEl = document.querySelector('meta[name="description"]');
-        const metaDescription = metaDescEl ? metaDescEl.getAttribute('content') || '' : '';
-        const h1El = document.querySelector('h1');
-        const h1 = h1El ? h1El.innerText.trim() : '';
-        const h2El = document.querySelector('h2');
-        const h2 = h2El ? h2El.innerText.trim() : '';
-        const wordCount = document.body ? document.body.innerText.split(/\s+/).length : 0;
+      // 8. Fire off another worker to hit max concurrency if queue allows
+      processNext();
+
+      // 9. Process the URL
+      let workerPage;
+      try {
+        workerPage = await browser.newPage();
         
-        const links = Array.from(document.querySelectorAll('a[href]'))
-          .map(a => a.href)
-          .filter(href => href.startsWith('http'));
+        // Speed hack: Block heavy non-HTML resources
+        await workerPage.setRequestInterception(true);
+        workerPage.on('request', (req) => {
+          if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
+
+        // 15s timeout to prevent hanging on bad connections
+        const response = await workerPage.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const statusCode = response ? response.status() : 500;
+        
+        if (statusCode >= 400) {
+          results.push({
+            url: normalized,
+            title: '', metaDescription: '', h1: '', h2: '',
+            statusCode, wordCount: 0, inlinks: 1
+          });
+        } else {
+          // Extract DOM metadata
+          const data = await workerPage.evaluate(() => {
+            const title = document.title || '';
+            const metaDescEl = document.querySelector('meta[name="description"]');
+            const metaDescription = metaDescEl ? metaDescEl.getAttribute('content') || '' : '';
+            const h1El = document.querySelector('h1');
+            const h1 = h1El ? h1El.innerText.trim() : '';
+            const h2El = document.querySelector('h2');
+            const h2 = h2El ? h2El.innerText.trim() : '';
+            const wordCount = document.body ? document.body.innerText.split(/\s+/).length : 0;
+            
+            const links = Array.from(document.querySelectorAll('a[href]'))
+              .map(a => a.href)
+              .filter(href => href.startsWith('http'));
+              
+            return { title, metaDescription, h1, h2, wordCount, links };
+          });
           
-        return { title, metaDescription, h1, h2, wordCount, links };
-      });
-      
-      results.push({
-        url: normalized,
-        title: data.title,
-        metaDescription: data.metaDescription,
-        h1: data.h1,
-        h2: data.h2,
-        statusCode,
-        wordCount: data.wordCount,
-        inlinks: 1,
-        outlinks: data.links.length,
-        outgoingLinks: data.links
-      });
-      
-      for (const link of data.links) {
-        const nLink = normalizeUrl(link);
-        if (nLink && !visited.has(nLink) && currentDepth < maxDepth) {
-          // pre-check exclusion to avoid bloating queue
-          if (!exclusionRegex || !exclusionRegex.test(nLink)) {
-            toVisit.push({ url: nLink, depth: currentDepth + 1 });
+          results.push({
+            url: normalized,
+            title: data.title,
+            metaDescription: data.metaDescription,
+            h1: data.h1,
+            h2: data.h2,
+            statusCode,
+            wordCount: data.wordCount,
+            inlinks: 1,
+            outlinks: data.links.length,
+            outgoingLinks: data.links
+          });
+          
+          // Queue new internal links
+          for (const link of data.links) {
+            const nLink = normalizeUrl(link);
+            if (nLink && !visited.has(nLink) && currentDepth < maxDepth) {
+              if (!exclusionRegex || !exclusionRegex.test(nLink)) {
+                toVisit.push({ url: nLink, depth: currentDepth + 1 });
+              }
+            }
           }
         }
+        
+        // Respect rate limits if set
+        if (rateLimit > 0) {
+          await new Promise(r => setTimeout(r, rateLimit));
+        }
+      } catch (error) {
+        console.error(`Error crawling ${normalized}:`, error.message);
+      } finally {
+        // ALWAYS clean up the page context to prevent memory leaks
+        if (workerPage) await workerPage.close().catch(() => {});
+        activeWorkers--;
+        processNext(); // Notify pool that a slot is free
       }
-      
-      crawledCount++;
-      if (rateLimit > 0) {
-        await new Promise(r => setTimeout(r, rateLimit));
-      }
-    } catch (error) {
-      console.error(`Error crawling ${normalized}:`, error.message);
+    };
+
+    // Kickoff initial batch of workers
+    for (let i = 0; i < maxConcurrency; i++) {
+      processNext();
     }
+  });
+
+  if (isPausedState) {
+    onProgress({ type: 'progress', message: 'Crawl paused by user', current: crawledCount, total: visited.size });
+    await browser.close();
+    return { 
+      isPaused: true, 
+      state: { toVisit, visited: Array.from(visited), results, crawledCount } 
+    };
   }
-  
+
+  if (getIsStopped && getIsStopped()) {
+    onProgress({ type: 'progress', message: 'Crawl stopped by user', current: crawledCount, total: visited.size });
+  }
+
   await browser.close();
   return results;
 }
