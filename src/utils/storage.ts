@@ -1,102 +1,111 @@
-import localforage from 'localforage';
 import { MigrationProject, MigrationSnapshot } from '../types/migration';
-
-const projectStore = localforage.createInstance({
-  name: 'WebsiteMigrationTool',
-  storeName: 'projects'
-});
-
-const snapshotStore = localforage.createInstance({
-  name: 'WebsiteMigrationTool',
-  storeName: 'snapshots'
-});
-
-interface SnapshotWrapper {
-  projectId: string;
-  snapshot: MigrationSnapshot;
-}
+import { supabase } from './supabaseClient';
 
 export async function saveProjectToIndexedDB(project: MigrationProject): Promise<void> {
   try {
+    // Auto-update timestamp
     project.updatedAt = new Date().toISOString();
     if (!project.createdAt) {
       project.createdAt = project.updatedAt;
     }
-    await projectStore.setItem(project.id, project);
+
+    const { error } = await supabase
+      .from('migrationProjects')
+      .upsert({
+        id: project.id,
+        project_data: project,
+        updated_at: project.updatedAt
+      });
+
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to save project to IndexedDB:', error);
+    console.error('Failed to save project to Supabase:', error);
   }
 }
 
 export async function loadProjectFromIndexedDB(id: string): Promise<MigrationProject | null> {
   try {
-    const project = await projectStore.getItem<MigrationProject>(id);
-    return project || null;
+    const { data, error } = await supabase
+      .from('migrationProjects')
+      .select('project_data')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    return data?.project_data as MigrationProject || null;
   } catch (error) {
-    console.error('Failed to load project from IndexedDB:', error);
+    console.error('Failed to load project from Supabase:', error);
     return null;
   }
 }
 
 export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]> {
   try {
-    const projects: MigrationProject[] = [];
-    await projectStore.iterate((value: MigrationProject) => {
-      projects.push(value);
-    });
-    return projects.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const { data, error } = await supabase
+      .from('migrationProjects')
+      .select('project_data, updated_at')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    
+    return data?.map(row => row.project_data as MigrationProject) || [];
   } catch (error) {
-    console.error('Failed to get all projects from IndexedDB:', error);
+    console.error('Failed to get all projects from Supabase:', error);
     return [];
   }
 }
 
 export async function deleteProjectFromIndexedDB(id: string): Promise<void> {
   try {
-    await projectStore.removeItem(id);
-    
-    const snapshotsToDelete: string[] = [];
-    await snapshotStore.iterate((value: SnapshotWrapper, key: string) => {
-      if (value.projectId === id) {
-        snapshotsToDelete.push(key);
-      }
-    });
-    
-    for (const snapId of snapshotsToDelete) {
-      await snapshotStore.removeItem(snapId);
-    }
+    // Also delete any associated snapshots via foreign key cascade or manual delete
+    await supabase.from('projectSnapshots').delete().eq('project_id', id);
+    const { error } = await supabase.from('migrationProjects').delete().eq('id', id);
+
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to delete project from IndexedDB:', error);
+    console.error('Failed to delete project from Supabase:', error);
   }
 }
 
 export async function saveSnapshot(projectId: string, snapshot: MigrationSnapshot): Promise<void> {
   try {
-    await snapshotStore.setItem(snapshot.id, { projectId, snapshot });
+    const { error } = await supabase
+      .from('projectSnapshots')
+      .upsert({
+        id: snapshot.id,
+        project_id: projectId,
+        snapshot_data: snapshot,
+        created_at: snapshot.timestamp
+      });
+
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to save snapshot to IndexedDB:', error);
+    console.error('Failed to save snapshot to Supabase:', error);
   }
 }
 
 export async function getSnapshots(projectId: string): Promise<MigrationSnapshot[]> {
   try {
-    const snapshots: MigrationSnapshot[] = [];
-    await snapshotStore.iterate((value: SnapshotWrapper) => {
-      if (value.projectId === projectId) {
-        snapshots.push(value.snapshot);
-      }
-    });
-    return snapshots.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const { data, error } = await supabase
+      .from('projectSnapshots')
+      .select('snapshot_data, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    
+    return data?.map(row => row.snapshot_data as MigrationSnapshot) || [];
   } catch (error) {
-    console.error('Failed to get snapshots from IndexedDB:', error);
+    console.error('Failed to get snapshots from Supabase:', error);
     return [];
   }
 }
 
 export async function deleteSnapshot(id: string): Promise<void> {
   try {
-    await snapshotStore.removeItem(id);
+    const { error } = await supabase.from('projectSnapshots').delete().eq('id', id);
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to delete snapshot from IndexedDB:', error);
+    console.error('Failed to delete snapshot from Supabase:', error);
   }
 }
