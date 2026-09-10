@@ -30,9 +30,9 @@ COPY . .
 # Build the Vite frontend
 RUN npm run build
 
-# Expose port 8000 (Koyeb's default)
-EXPOSE 8000
-ENV PORT=8000
+# Expose port 7860 (Hugging Face Spaces default)
+EXPOSE 7860
+ENV PORT=7860
 
 # Start the server
 CMD ["npm", "start"]
