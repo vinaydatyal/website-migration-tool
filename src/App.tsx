@@ -13,6 +13,7 @@ import { LinkAuditorView } from './components/LinkAuditorView';
 import { CrawlDataView } from './components/CrawlDataView';
 import { MigrationChecklist } from './components/MigrationChecklist';
 import { ArchitectureView } from './components/ArchitectureView';
+import { InfrastructureAuditorView } from './components/InfrastructureAuditorView';
 import { ExportModal } from './components/ExportModal';
 import { ProjectManagerModal } from './components/ProjectManagerModal';
 import { HistorySidebar } from './components/HistorySidebar';
@@ -39,9 +40,9 @@ import {
   saveProjectToIndexedDB, 
   getAllProjectsFromIndexedDB, 
   deleteProjectFromIndexedDB,
-  saveSnapshotToIndexedDB,
-  getSnapshotsForProject,
-  deleteSnapshotFromIndexedDB
+  saveSnapshot,
+  getSnapshots,
+  deleteSnapshot
 } from './utils/storage';
 import { SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE } from './data/sampleData';
 
@@ -140,7 +141,7 @@ export function App() {
 
   // --- Snapshot Management ---
   const loadSnapshots = async () => {
-    const snaps = await getSnapshotsForProject(projectId);
+    const snaps = await getSnapshots(projectId);
     setSnapshots(snaps);
   };
 
@@ -153,7 +154,7 @@ export function App() {
       stats: currentStats,
       mappings: currentMappings
     };
-    await saveSnapshotToIndexedDB(snap);
+    await saveSnapshot(projectId, snap);
     await loadSnapshots();
   };
 
@@ -164,7 +165,7 @@ export function App() {
   };
 
   const handleDeleteSnapshot = async (snapId: string) => {
-    await deleteSnapshotFromIndexedDB(snapId);
+    await deleteSnapshot(snapId);
     await loadSnapshots();
     toast.info('Snapshot deleted.');
   };
@@ -619,7 +620,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300 transition-colors duration-200">
       <Toaster position="top-right" theme="dark" richColors />
 
       {/* Top Navigation */}
@@ -740,6 +741,12 @@ export function App() {
                 />
               } />
 
+              <Route path="/:projectSlug/infrastructure" element={
+                <InfrastructureAuditorView 
+                  projectMetadata={projectMetadata}
+                />
+              } />
+
               <Route path="/:projectSlug/regex" element={
                 <RegexSynthesizerView
                   patterns={patterns}
@@ -795,8 +802,8 @@ export function App() {
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-800/80 bg-slate-950/60 py-6 text-center text-xs text-slate-500">
-        <p>MigrateShield • Built for SEO Agencies, Dev Teams & Enterprise Migrations</p>
+      <footer className="w-full border-t border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm py-4 text-center text-xs text-slate-500">
+        <p>MigrateFlow • Built for SEO Agencies, Dev Teams & Enterprise Migrations</p>
       </footer>
 
       {/* Export Configuration Modal */}

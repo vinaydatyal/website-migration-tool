@@ -1,9 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { crawlSite } from './crawler.js';
 import { generatePdfReport } from './pdfGenerator.js';
 import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
+import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
 
 const app = express();
 app.use(cors());
@@ -224,6 +227,63 @@ app.get('/api/gsc/sites', fetchGscSites);
 // --- Google Analytics 4 Endpoints ---
 app.get('/api/ga4/properties', fetchGa4Properties);
 app.post('/api/ga4/data', fetchGa4Data);
+
+// --- Infrastructure Endpoints ---
+app.get('/api/check-dns-ssl', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.status(400).json({ error: 'Domain is required' });
+  try {
+    const data = await checkDnsAndSsl(domain);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/check-robots', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.status(400).json({ error: 'Domain is required' });
+  try {
+    const data = await checkRobotsTxt(domain);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/check-sitemap', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.status(400).json({ error: 'Domain is required' });
+  try {
+    const data = await checkSitemapXml(domain);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- PDF Generation Endpoint ---
+app.post('/api/generate-pdf', async (req, res) => {
+  try {
+    const pdfBuffer = await generatePdfReport(req.body);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="migration-audit-report.pdf"');
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  });
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

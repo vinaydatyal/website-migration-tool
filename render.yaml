@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: website-migration-tool
+    env: node
+    buildCommand: npm install && npm run build && npx puppeteer browsers install chrome
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production

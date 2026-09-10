@@ -159,32 +159,87 @@ export function evaluateParityDiscrepancies(source: CrawlEntry, target: CrawlEnt
     });
   }
 
-  // 6. H1 Heading Missing
-  if (source.h1 && !target.h1) {
+
+  // 7. Meta Description Mismatch / Drop
+  if (source.metaDescription && !target.metaDescription) {
     discrepancies.push({
-      id: `disc_h1_${source.id}`,
-      type: 'H1_MISSING',
-      severity: profile === 'THEME_UPGRADE' ? 'CRITICAL' : 'WARNING',
-      title: 'Target Page Missing Primary <h1> Heading',
-      description: 'Source page had a primary H1 heading, but target page has no detected H1.',
-      sourceValue: source.h1,
+      id: `disc_metadesc_missing_${source.id}`,
+      type: 'META_DESCRIPTION_DROPPED',
+      severity: 'WARNING',
+      title: 'Target Meta Description is Missing',
+      description: 'Source page had a meta description but target page does not.',
+      sourceValue: source.metaDescription,
       targetValue: 'Missing',
-      recommendation: 'Ensure target template renders a semantic <h1> tag.'
+      recommendation: 'Ensure meta description is carried over to maintain CTR.'
     });
   }
 
-  // 7. Meta Description Missing
-  if (source.metaDescription && !target.metaDescription) {
+  // 8. H1 Drift
+  if (source.h1 && target.h1 && source.h1.toLowerCase() !== target.h1.toLowerCase()) {
     discrepancies.push({
-      id: `disc_desc_${source.id}`,
-      type: 'META_DESCRIPTION_DROPPED',
-      severity: 'INFO',
-      title: 'Meta Description Missing on Target',
-      description: 'Source had a meta description, but target page has none.',
-      sourceValue: source.metaDescription,
-      targetValue: 'Empty',
-      recommendation: 'Populate meta description on target page.'
+      id: `disc_h1_drift_${source.id}`,
+      type: 'TITLE_DISCREPANCY',
+      severity: 'WARNING',
+      title: 'H1 Tag Changed',
+      description: 'The primary H1 tag has changed on the target page. This can impact topical relevance.',
+      sourceValue: source.h1,
+      targetValue: target.h1,
+      recommendation: 'Review H1 change to ensure core target keywords are still present.'
     });
+  } else if (source.h1 && !target.h1) {
+    discrepancies.push({
+      id: `disc_h1_missing_${source.id}`,
+      type: 'H1_MISSING',
+      severity: 'HIGH',
+      title: 'Target H1 is Missing',
+      description: 'Source page had an H1 tag but target page does not.',
+      sourceValue: source.h1,
+      targetValue: 'Missing',
+      recommendation: 'Add a relevant H1 tag to the target page.'
+    });
+  }
+
+  // 9. Word Count Collapse
+  if (source.wordCount > 300 && target.wordCount > 0) {
+    const diff = (source.wordCount - target.wordCount) / source.wordCount;
+    if (diff > 0.20) {
+      discrepancies.push({
+        id: `disc_wordcount_${source.id}`,
+        type: 'WORD_COUNT_COLLAPSE',
+        severity: 'HIGH',
+        title: 'Significant Content Thinning',
+        description: 'The target page has significantly fewer words than the source page (>' + Math.round(diff * 100) + '% drop). This risks a traffic drop due to thin content.',
+        sourceValue: source.wordCount + ' words',
+        targetValue: target.wordCount + ' words',
+        recommendation: 'Review page content. Ensure no critical body copy was lost during the migration.'
+      });
+    }
+  }
+
+  // 10. Internal Link Traps (Hardcoded Old Domain Links)
+  if (target.outgoingLinks && target.outgoingLinks.length > 0 && profile !== 'CROSS_DOMAIN') {
+    try {
+      const sourceUrlObj = new URL(source.url);
+      const oldDomain = sourceUrlObj.hostname;
+      const oldLinks = target.outgoingLinks.filter(link => {
+        try { return new URL(link).hostname === oldDomain; } catch(e) { return false; }
+      });
+      
+      if (oldLinks.length > 0) {
+        discrepancies.push({
+          id: `disc_internal_links_${source.id}`,
+          type: 'REDIRECT_CHAIN_RISK',
+          severity: 'HIGH',
+          title: 'Hardcoded Internal Links to Old Domain',
+          description: `The target page contains ${oldLinks.length} links pointing to the OLD domain (${oldDomain}). This will cause unnecessary redirects or broken links post-launch.`,
+          sourceValue: 'N/A',
+          targetValue: `${oldLinks.length} hardcoded links`,
+          recommendation: 'Update internal links on the staging site to use relative paths or point to the new domain.'
+        });
+      }
+    } catch(e) {
+      // Ignore URL parse errors
+    }
   }
 
   // 8. Soft 404 Homepage Trap (Deep URL mapped to root /)

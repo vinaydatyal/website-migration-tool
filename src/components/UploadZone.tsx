@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, 
   FileSpreadsheet, 
@@ -72,6 +72,19 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   const targetInputRef = useRef<HTMLInputElement>(null);
   const analyticsInputRef = useRef<HTMLInputElement>(null);
 
+  const downloadCsvTemplate = () => {
+    const template = 'url,title,metaDescription,h1,indexability,wordCount\nhttps://example.com/page1,My Title,My Description,My H1,Indexable,500';
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crawl_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileChange = async (file: File, type: 'source' | 'target' | 'analytics') => {
     setError(null);
     try {
@@ -108,6 +121,13 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       setError(err.message || 'Failed to parse file.');
     }
   };
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, type: 'source' | 'target') => {
+    e.preventDefault();
+    if (e.dataTransfer.files?.[0]) {
+      handleFileChange(e.dataTransfer.files[0], type);
+    }
+  }, []);
 
   const handleOAuth = async (service: 'gsc' | 'ga4') => {
     try {
@@ -444,13 +464,13 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           <Sparkles className="h-3.5 w-3.5" />
           <span>Screaming Frog 301 Engine & SEO Parity Suite</span>
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight">
           Automate Website Migrations <br />
-          <span className="bg-gradient-to-r from-brand-400 via-emerald-300 to-teal-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-brand-600 via-emerald-500 to-teal-600 dark:from-brand-400 dark:via-emerald-300 dark:to-teal-400 bg-clip-text text-transparent">
             With Zero Traffic Loss
           </span>
         </h1>
-        <p className="max-w-2xl mx-auto text-sm sm:text-base text-slate-400">
+        <p className="max-w-2xl mx-auto text-sm sm:text-base text-slate-600 dark:text-slate-400">
           Upload your Screaming Frog crawl exports for the <strong>Source (Old Site)</strong> and <strong>Target (New/Staging Site)</strong>. Our multi-tier matching engine synthesizes 301 redirects and flags critical SEO discrepancies in seconds.
         </p>
       </div>
@@ -466,12 +486,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
       {/* Project Name Input */}
       <div className="max-w-md mx-auto mb-8">
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">Project Name</label>
+        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 text-center">Project Name</label>
         <input
           type="text"
           value={uploadProjectName}
           onChange={(e) => setUploadProjectName(e.target.value)}
-          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 text-center"
+          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-brand-500 text-center shadow-sm"
           placeholder="e.g. Acme Corp Migration"
         />
       </div>
@@ -506,7 +526,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           <div className={`p-6 rounded-2xl border-2 border-dashed transition-all ${
             sourceFile 
               ? 'border-brand-500/60 bg-brand-500/5' 
-              : 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
+              : 'border-slate-300 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60'
           }`}>
             <input
               type="file"
@@ -518,12 +538,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className={`p-2.5 rounded-xl ${sourceFile ? 'bg-brand-500/20 text-brand-400' : 'bg-slate-800 text-slate-400'}`}>
+                <div className={`p-2.5 rounded-xl ${sourceFile ? 'bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                   <FileSpreadsheet className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">1. Source Site Crawl</h3>
-                  <p className="text-xs text-slate-400">Old / Existing Website Export</p>
+                  <h3 className="text-base font-bold text-slate-800 dark:text-white">1. Source Site Crawl</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Old / Existing Website Export</p>
                 </div>
               </div>
               {sourceFile && (
@@ -560,7 +580,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
               >
                 <Upload className="h-8 w-8 text-slate-500 mx-auto group-hover:text-brand-400 transition-colors" />
                 <h3 className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Drop <code className="text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">internal_html.csv</code> or <code className="text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">sitemap.xml</code> here
+                  Drop <code className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">internal_html.csv</code> or <code className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">sitemap.xml</code> here
                 </h3>
                 <p className="text-xs text-slate-500">Supports CSV, XLSX, XML up to 250k URLs</p>
               </div>
@@ -573,7 +593,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           <div className={`p-6 rounded-2xl border-2 border-dashed transition-all ${
             targetFile 
               ? 'border-emerald-500/60 bg-emerald-500/5' 
-              : 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
+              : 'border-slate-300 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60'
           }`}>
             <input
               type="file"
@@ -585,32 +605,33 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className={`p-2.5 rounded-xl ${targetFile ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                <div className={`p-2.5 rounded-xl ${targetFile ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                   <FileSpreadsheet className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">2. Target Site Crawl</h3>
-                  <p className="text-xs text-slate-400">New / Staging Website Export</p>
-                </div>
-              </div>
-              <div className="flex justify-between items-center mt-6">
-                <button
-                  type="button"
-                  onClick={downloadCsvTemplate}
-                  className="text-xs text-brand-400 hover:text-brand-300 underline font-medium"
-                >
-                  Download CSV Template
-                </button>
-                <div className="text-xs text-slate-400">
-                  <span className="font-semibold text-slate-300">Supported formats:</span> Screaming Frog CSV/Excel, Ahrefs, SEMrush, standard CSV
+                  <h3 className="text-base font-bold text-slate-800 dark:text-white">2. Target Site Crawl</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">New / Staging Website Export</p>
                 </div>
               </div>
               {targetFile && (
-                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold">
+                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 text-xs font-semibold">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   <span>Ready</span>
                 </span>
               )}
+            </div>
+
+            <div className="flex flex-col space-y-2 mt-2 mb-6">
+              <button
+                type="button"
+                onClick={downloadCsvTemplate}
+                className="text-xs text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline font-medium self-start"
+              >
+                Download CSV Template
+              </button>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Supported formats:</span> Screaming Frog, Ahrefs, SEMrush, or Custom CSV.
+              </div>
             </div>
 
             {targetFile ? (
@@ -639,7 +660,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
               >
                 <Upload className="h-8 w-8 text-slate-500 mx-auto group-hover:text-emerald-400 transition-colors" />
                 <h3 className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Drop <code className="text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">staging_crawl.csv</code> or <code className="text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">sitemap.xml</code> here
+                  Drop <code className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">staging_crawl.csv</code> or <code className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">sitemap.xml</code> here
                 </h3>
                 <p className="text-xs text-slate-500">Supports CSV, XLSX, XML up to 250k URLs</p>
               </div>
@@ -651,14 +672,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         ) : (
           <>
         {/* Source Crawl Box */}
-        <div className="p-6 rounded-2xl border-2 border-slate-800 bg-slate-900/60">
+        <div className="p-6 rounded-2xl border-2 border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60">
           <div className="flex items-center space-x-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-brand-500/20 text-brand-400">
+            <div className="p-2.5 rounded-xl bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400">
               <Sparkles className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">1. Crawl Old Site</h3>
-              <p className="text-xs text-slate-400">Enter the current production URL</p>
+              <h3 className="text-base font-bold text-slate-800 dark:text-white">1. Crawl Old Site</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Enter the current production URL</p>
             </div>
           </div>
           
@@ -735,14 +756,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         </div>
 
         {/* Target Crawl Box */}
-        <div className="p-6 rounded-2xl border-2 border-slate-800 bg-slate-900/60">
+        <div className="p-6 rounded-2xl border-2 border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60">
           <div className="flex items-center space-x-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
+            <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
               <Sparkles className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">2. Crawl New Site</h3>
-              <p className="text-xs text-slate-400">Enter the staging/new URL</p>
+              <h3 className="text-base font-bold text-slate-800 dark:text-white">2. Crawl New Site</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Enter the staging/new URL</p>
             </div>
           </div>
           
@@ -825,7 +846,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           <div className={`h-full p-6 rounded-2xl border-2 border-dashed transition-all flex flex-col justify-between ${
             analyticsFile 
               ? 'border-purple-500/60 bg-purple-500/5' 
-              : 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
+              : 'border-slate-300 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700 bg-white dark:bg-slate-900/60'
           }`}>
             <input
               type="file"
@@ -837,12 +858,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className={`p-2.5 rounded-xl ${analyticsFile ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-800 text-slate-400'}`}>
+                <div className={`p-2.5 rounded-xl ${analyticsFile ? 'bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                   <FileSpreadsheet className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">3. Analytics (Opt)</h3>
-                  <p className="text-xs text-slate-400">GA4 or Ahrefs Export</p>
+                  <h3 className="text-base font-bold text-slate-800 dark:text-white">3. Analytics (Opt)</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">GA4 or Ahrefs Export</p>
                 </div>
               </div>
               {analyticsFile && (
@@ -878,15 +899,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                 className="py-8 text-center cursor-pointer space-y-2 mt-auto"
               >
                 <Upload className="h-8 w-8 text-slate-500 mx-auto group-hover:text-purple-400 transition-colors" />
-                <p className="text-sm font-semibold text-slate-300">
-                  Drop <code className="text-xs font-mono bg-slate-800 px-1 py-0.5 rounded">analytics.csv</code>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Drop <code className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">analytics.csv</code>
                 </p>
                 <div className="flex flex-col items-center mt-2 space-y-2">
                   <select 
                     value={analyticsPlatform}
                     onChange={(e) => setAnalyticsPlatform(e.target.value as AnalyticsPlatform)}
                     onClick={(e) => e.stopPropagation()}
-                    className="appearance-none bg-slate-950 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1 focus:outline-none focus:border-purple-500"
+                    className="appearance-none bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 rounded px-2 py-1 focus:outline-none focus:border-purple-500 shadow-sm"
                   >
                     <option value="AUTO">Auto-detect Platform</option>
                     <option value="GA4">Google Analytics 4</option>
@@ -896,11 +917,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                   <p className="text-[10px] text-slate-500">To prioritize traffic loss</p>
                 </div>
                 
-                <div className="pt-4 border-t border-slate-800/80 w-full mt-4 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 w-full mt-4 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
                   {!gscConnected ? (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOAuth('gsc'); }}
-                      className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                      className="w-full py-2 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-sm"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -925,7 +946,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                   {!ga4Connected ? (
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOAuth('ga4'); }}
-                      className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                      className="w-full py-2 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-sm"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -1135,31 +1156,29 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       )}
 
       {/* Migration Context Selector */}
-      <div className="mb-8 p-5 bg-slate-900/60 border border-slate-800 rounded-2xl">
-        <label className="block text-sm font-semibold text-slate-200 mb-3">
-          Migration Scenario Context
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <div className="mb-10 p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+        <div className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">Migration Scenario Context</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             type="button"
-            onClick={() => setProfile('UNKNOWN')}
+            onClick={() => setProfile('STANDARD')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
-              profile === 'UNKNOWN' 
-                ? 'bg-brand-500/10 border-brand-500 text-brand-300' 
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+              profile === 'STANDARD' 
+                ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
+                : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
             <div className="font-bold mb-1">Standard / Not Sure</div>
             <div className="text-xs opacity-70">Balanced heuristics.</div>
           </button>
-          
+
           <button
             type="button"
             onClick={() => setProfile('THEME_UPGRADE')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
               profile === 'THEME_UPGRADE' 
-                ? 'bg-brand-500/10 border-brand-500 text-brand-300' 
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
+                : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
             <div className="font-bold mb-1">Theme Upgrade</div>
@@ -1171,8 +1190,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             onClick={() => setProfile('CMS_SWITCH')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
               profile === 'CMS_SWITCH' 
-                ? 'bg-brand-500/10 border-brand-500 text-brand-300' 
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
+                : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
             <div className="font-bold mb-1">CMS Platform Switch</div>
@@ -1184,8 +1203,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             onClick={() => setProfile('WORDPRESS_MIGRATION')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
               profile === 'WORDPRESS_MIGRATION' 
-                ? 'bg-brand-500/10 border-brand-500 text-brand-300' 
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
+                : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
             <div className="font-bold mb-1">WordPress Migration</div>
@@ -1197,8 +1216,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             onClick={() => setProfile('CROSS_DOMAIN')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
               profile === 'CROSS_DOMAIN' 
-                ? 'bg-brand-500/10 border-brand-500 text-brand-300' 
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
+                : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
             <div className="font-bold mb-1">Cross-Domain Rebrand</div>
@@ -1226,42 +1245,42 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
         <button
           onClick={onLoadSample}
-          className="w-full sm:w-auto px-6 py-3.5 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+          className="w-full sm:w-auto px-6 py-3.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700/80 flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm"
         >
-          <Sparkles className="h-4 w-4 text-brand-400" />
+          <Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400" />
           <span>Load E-Commerce Demo Dataset</span>
         </button>
       </div>
 
       {/* Feature Pills */}
-      <div className="mt-14 pt-8 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center sm:text-left">
+      <div className="mt-14 pt-8 border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center sm:text-left">
         <div className="flex items-start space-x-3">
-          <div className="p-2 rounded-lg bg-brand-500/10 text-brand-400 shrink-0">
+          <div className="p-2 rounded-lg bg-brand-100 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 shrink-0">
             <CheckCircle2 className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Anti-False Positive Engine</h4>
-            <p className="text-xs text-slate-400 mt-0.5">Penalizes geo-location, pagination, and product SKU drift.</p>
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Anti-False Positive Engine</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Penalizes geo-location, pagination, and product SKU drift.</p>
           </div>
         </div>
 
         <div className="flex items-start space-x-3">
-          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 shrink-0">
+          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
             <AlertCircle className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Pre/Post SEO Parity</h4>
-            <p className="text-xs text-slate-400 mt-0.5">Flags staging noindex leaks, canonical drift, and word count collapse.</p>
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Pre/Post SEO Parity</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Flags staging noindex leaks, canonical drift, and word count collapse.</p>
           </div>
         </div>
 
         <div className="flex items-start space-x-3">
-          <div className="p-2 rounded-lg bg-teal-500/10 text-teal-400 shrink-0">
+          <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 shrink-0">
             <FileSpreadsheet className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Multi-Format Exporters</h4>
-            <p className="text-xs text-slate-400 mt-0.5">Generates Apache .htaccess, Nginx, Cloudflare CSV, and Vercel configs.</p>
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Multi-Format Exporters</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Generates Apache .htaccess, Nginx, Cloudflare CSV, and Vercel configs.</p>
           </div>
         </div>
       </div>

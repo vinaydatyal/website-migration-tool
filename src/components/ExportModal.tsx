@@ -70,7 +70,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (selectedFormat === 'EXECUTIVE_PDF') {
+      try {
+        const criticalIssues = mappings
+          .flatMap(m => m.discrepancies.map(d => ({...d, sourceUrl: m.source.url, targetUrl: m.target?.url})))
+          .filter(d => d.severity === 'CRITICAL' || d.severity === 'HIGH');
+        const res = await fetch('http://localhost:3001/api/generate-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stats, projectMetadata, criticalIssues })
+        });
+        if (!res.ok) throw new Error('PDF Generation failed');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'migration-audit-report.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`Downloaded Executive Report PDF`);
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to generate PDF');
+      }
+      return;
+    }
+
     const blob = new Blob([exportData.content as BlobPart], { type: exportData.mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -93,6 +120,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     { id: 'FULL_MAPPING_CSV', label: 'Full Audit CSV', icon: FileSpreadsheet },
     { id: 'FULL_AUDIT_EXCEL', label: 'Playbook + Audit (Excel)', icon: FileSpreadsheet },
     { id: 'SITEMAP_XML', label: 'Target Sitemap (XML)', icon: Globe },
+    { id: 'EXECUTIVE_PDF', label: 'Executive Report (PDF)', icon: FileCode2 },
   ];
 
   return (

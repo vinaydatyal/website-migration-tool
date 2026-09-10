@@ -736,6 +736,7 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
                       onSelectTarget={handleSelectTargetFromDropdown}
                       onStartEdit={handleStartEdit}
                       onShowDuplicates={() => setDuplicateModalTarget(m.targetUrl)}
+                      onUpdateMapping={onUpdateMapping}
                     />
                   );
                 })

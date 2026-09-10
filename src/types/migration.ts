@@ -174,7 +174,8 @@ export type ExportFormat =
   | 'FULL_MAPPING_CSV' 
   | 'SEO_AUDIT_REPORT_CSV'
   | 'FULL_AUDIT_EXCEL'
-  | 'SITEMAP_XML';
+  | 'SITEMAP_XML'
+  | 'EXECUTIVE_PDF';
 
 export interface MigrationSnapshot {
   id: string;

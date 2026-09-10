@@ -27,7 +27,7 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
     return currentData.filter(entry => 
       entry.url.toLowerCase().includes(query) ||
       (entry.title && entry.title.toLowerCase().includes(query)) ||
-      (entry.description && entry.description.toLowerCase().includes(query))
+      (entry.metaDescription && entry.metaDescription.toLowerCase().includes(query))
     );
   }, [currentData, searchQuery]);
 
@@ -84,7 +84,7 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <input
             type="text"
-            placeholder="Search URLs, titles, or descriptions..."
+            placeholder="Search URLs, titles, or metaDescriptions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
@@ -145,8 +145,8 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
                         <div className="text-sm text-slate-200 line-clamp-2" title={entry.title || 'Missing Title'}>
                           {entry.title || <span className="text-slate-500 italic">No Title</span>}
                         </div>
-                        <div className="text-xs text-slate-400 line-clamp-3" title={entry.description || 'Missing Description'}>
-                          {entry.description || <span className="text-slate-600 italic">No Meta Description</span>}
+                        <div className="text-xs text-slate-400 line-clamp-3" title={entry.metaDescription || 'Missing Description'}>
+                          {entry.metaDescription || <span className="text-slate-600 italic">No Meta Description</span>}
                         </div>
                       </div>
                     </td>

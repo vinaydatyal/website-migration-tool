@@ -1,190 +1,111 @@
 import { MigrationProject, MigrationSnapshot } from '../types/migration';
-
-const DB_NAME = 'MigrateShieldDB';
-const STORE_NAME = 'migrationProjects';
-const SNAPSHOT_STORE_NAME = 'projectSnapshots';
-const DB_VERSION = 3; // Upgraded version for snapshots
-
-function getDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-      if (!db.objectStoreNames.contains(SNAPSHOT_STORE_NAME)) {
-        const snapshotStore = db.createObjectStore(SNAPSHOT_STORE_NAME, { keyPath: 'id' });
-        snapshotStore.createIndex('projectId', 'projectId', { unique: false });
-      }
-    };
-
-    request.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
-    request.onerror = (e) => reject((e.target as IDBOpenDBRequest).error);
-  });
-}
+import { supabase } from './supabaseClient';
 
 export async function saveProjectToIndexedDB(project: MigrationProject): Promise<void> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      
-      // Auto-update timestamp
-      project.updatedAt = new Date().toISOString();
-      if (!project.createdAt) {
-        project.createdAt = project.updatedAt;
-      }
+    // Auto-update timestamp
+    project.updatedAt = new Date().toISOString();
+    if (!project.createdAt) {
+      project.createdAt = project.updatedAt;
+    }
 
-      store.put(project, project.id);
+    const { error } = await supabase
+      .from('migrationProjects')
+      .upsert({
+        id: project.id,
+        project_data: project,
+        updated_at: project.updatedAt
+      });
 
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to save project to IndexedDB:', error);
+    console.error('Failed to save project to Supabase:', error);
   }
 }
 
 export async function loadProjectFromIndexedDB(id: string): Promise<MigrationProject | null> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.get(id);
+    const { data, error } = await supabase
+      .from('migrationProjects')
+      .select('project_data')
+      .eq('id', id)
+      .single();
 
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
+    if (error) throw error;
+    return data?.project_data as MigrationProject || null;
   } catch (error) {
-    console.error('Failed to load project from IndexedDB:', error);
+    console.error('Failed to load project from Supabase:', error);
     return null;
   }
 }
 
 export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.getAll();
+    const { data, error } = await supabase
+      .from('migrationProjects')
+      .select('project_data, updated_at')
+      .order('updated_at', { ascending: false });
 
-      request.onsuccess = () => {
-        // Sort by updatedAt descending
-        const projects = (request.result || []).sort((a, b) => 
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-        resolve(projects);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    if (error) throw error;
+    
+    return data?.map(row => row.project_data as MigrationProject) || [];
   } catch (error) {
-    console.error('Failed to get all projects from IndexedDB:', error);
+    console.error('Failed to get all projects from Supabase:', error);
     return [];
   }
 }
 
 export async function deleteProjectFromIndexedDB(id: string): Promise<void> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.delete(id);
+    // Also delete any associated snapshots via foreign key cascade or manual delete
+    await supabase.from('projectSnapshots').delete().eq('project_id', id);
+    const { error } = await supabase.from('migrationProjects').delete().eq('id', id);
 
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to delete project from IndexedDB:', error);
+    console.error('Failed to delete project from Supabase:', error);
   }
 }
 
-// --- Snapshot Operations ---
-
-export async function saveSnapshotToIndexedDB(snapshot: MigrationSnapshot): Promise<void> {
+export async function saveSnapshot(projectId: string, snapshot: MigrationSnapshot): Promise<void> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(SNAPSHOT_STORE_NAME);
-      
-      if (!snapshot.timestamp) {
-        snapshot.timestamp = new Date().toISOString();
-      }
+    const { error } = await supabase
+      .from('projectSnapshots')
+      .upsert({
+        id: snapshot.id,
+        project_id: projectId,
+        snapshot_data: snapshot,
+        created_at: snapshot.timestamp
+      });
 
-      store.put(snapshot);
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to save snapshot to IndexedDB:', error);
+    console.error('Failed to save snapshot to Supabase:', error);
   }
 }
 
-export async function getSnapshotsForProject(projectId: string): Promise<MigrationSnapshot[]> {
+export async function getSnapshots(projectId: string): Promise<MigrationSnapshot[]> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readonly');
-      const store = tx.objectStore(SNAPSHOT_STORE_NAME);
-      const index = store.index('projectId');
-      const request = index.getAll(projectId);
+    const { data, error } = await supabase
+      .from('projectSnapshots')
+      .select('snapshot_data, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false });
 
-      request.onsuccess = () => {
-        // Sort by timestamp descending (newest first)
-        const snapshots = (request.result || []).sort((a, b) => 
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
-        resolve(snapshots);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    if (error) throw error;
+    
+    return data?.map(row => row.snapshot_data as MigrationSnapshot) || [];
   } catch (error) {
-    console.error('Failed to get snapshots from IndexedDB:', error);
+    console.error('Failed to get snapshots from Supabase:', error);
     return [];
   }
 }
 
-export async function deleteSnapshotFromIndexedDB(id: string): Promise<void> {
+export async function deleteSnapshot(id: string): Promise<void> {
   try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(SNAPSHOT_STORE_NAME);
-      store.delete(id);
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    const { error } = await supabase.from('projectSnapshots').delete().eq('id', id);
+    if (error) throw error;
   } catch (error) {
-    console.error('Failed to delete snapshot from IndexedDB:', error);
-  }
-}
-
-export async function deleteAllSnapshotsForProject(projectId: string): Promise<void> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(SNAPSHOT_STORE_NAME);
-      const index = store.index('projectId');
-      const request = index.getAllKeys(projectId);
-
-      request.onsuccess = () => {
-        const keys = request.result;
-        keys.forEach(key => store.delete(key));
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (error) {
-    console.error('Failed to delete all snapshots for project:', error);
+    console.error('Failed to delete snapshot from Supabase:', error);
   }
 }

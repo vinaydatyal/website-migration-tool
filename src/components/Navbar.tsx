@@ -13,8 +13,8 @@ import {
   Sun,
   Moon,
   HelpCircle,
-  LayoutGrid,
-  Database
+  Database,
+  Server
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { slugify } from '../utils/text';
@@ -182,6 +182,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Network className="h-3.5 w-3.5" />
                 <span>Architecture</span>
+              </Link>
+              <Link
+                to={`/${projectSlug}/infrastructure`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                  activeTab === 'infrastructure'
+                    ? 'bg-brand-500 text-white dark:text-slate-950 shadow-md shadow-brand-500/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <Server className="h-3.5 w-3.5" />
+                <span>Tech & Infra</span>
               </Link>
               <Link
                 to={`/${projectSlug}/crawl-data`}
