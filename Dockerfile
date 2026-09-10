@@ -15,8 +15,7 @@ WORKDIR /app
 
 # Setup Puppeteer environment variables so it skips downloading its own chrome
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    NODE_ENV=production
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # Copy dependency definitions
 COPY package*.json ./
@@ -29,6 +28,9 @@ COPY . .
 
 # Build the Vite frontend
 RUN npm run build
+
+# Set node environment to production AFTER build
+ENV NODE_ENV=production
 
 # Expose port 7860 (Hugging Face Spaces default)
 EXPOSE 7860
