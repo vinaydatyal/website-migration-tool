@@ -109,8 +109,11 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       if (data.sites) {
         setGscSites(data.sites);
         if (data.sites.length > 0) setSelectedGscSite(data.sites[0]);
+      } else if (data.error) {
+        setError(`GSC Error: ${data.error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
+      setError(`GSC Fetch Error: ${e.message}`);
       console.error(e);
     }
   };
@@ -122,8 +125,11 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       if (data.properties) {
         setGa4Properties(data.properties);
         if (data.properties.length > 0) setSelectedGa4Property(data.properties[0].id);
+      } else if (data.error) {
+        setError(`GA4 Error: ${data.error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
+      setError(`GA4 Fetch Error: ${e.message}`);
       console.error(e);
     }
   };

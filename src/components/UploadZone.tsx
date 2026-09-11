@@ -151,8 +151,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       if (data.sites) {
         setGscSites(data.sites);
         if (data.sites.length > 0) setSelectedGscSite(data.sites[0]);
+      } else if (data.error) {
+        toast.error(`GSC Error: ${data.error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
+      toast.error(`GSC Fetch Error: ${e.message}`);
       console.error(e);
     }
   };
@@ -164,8 +167,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       if (data.properties) {
         setGa4Properties(data.properties);
         if (data.properties.length > 0) setSelectedGa4Property(data.properties[0].id);
+      } else if (data.error) {
+        toast.error(`GA4 Error: ${data.error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
+      toast.error(`GA4 Fetch Error: ${e.message}`);
       console.error(e);
     }
   };
