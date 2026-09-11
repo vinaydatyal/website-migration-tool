@@ -32,7 +32,7 @@ import {
   ProjectMetadata,
   MigrationSummaryStats
 } from './types/migration';
-import { matchSourceAndTargetEntriesAsync } from './utils/matcher';
+import { matchSourceAndTargetEntriesAsync, calculateRiskScore } from './utils/matcher';
 import { calculateMigrationStats, evaluateParityDiscrepancies } from './utils/parityAuditor';
 import { synthesizeRegexPatterns } from './utils/exporters';
 import { slugify } from './utils/text';
@@ -256,11 +256,31 @@ export function App() {
     setProcessProgress(0);
 
     try {
-      let computedMappings = await matchSourceAndTargetEntriesAsync(src, tgt, threshold, profile, (prog) => {
-        setProcessProgress(prog);
-      });
+      let computedMappings: UrlMapping[] = [];
 
-      if (keepManualOverrides) {
+      if (src && src.length > 0 && tgt && tgt.length > 0) {
+        computedMappings = await matchSourceAndTargetEntriesAsync(src, tgt, threshold, profile, (prog) => {
+          setProcessProgress(prog);
+        });
+      } else if (src && src.length > 0) {
+        // Source-only audit: All source entries are unmapped
+        computedMappings = src.map(source => ({
+          id: `map_${crypto.randomUUID()}`,
+          source,
+          targetUrl: null,
+          target: null,
+          status: 'NEEDS_REVIEW' as const,
+          strategy: 'UNMAPPED' as const,
+          confidenceScore: 0,
+          riskScore: calculateRiskScore(source, null, 0),
+          discrepancies: [],
+          notes: ''
+        }));
+      } else if (tgt && tgt.length > 0) {
+        computedMappings = [];
+      }
+
+      if (keepManualOverrides && computedMappings.length > 0) {
         const oldMappingsMap = new Map(mappings.map(m => [m.source.url, m]));
         
         computedMappings = computedMappings.map(newM => {
@@ -295,6 +315,28 @@ export function App() {
       // Take a snapshot automatically
       takeSnapshot('Initial matching completed', computedMappings, computedStats);
 
+      // Persist immediately to IndexedDB / Supabase so project manager always has up-to-date URL counts
+      saveProjectToIndexedDB({
+        id: projectId,
+        name: projectName,
+        profile,
+        sourceFileName: '',
+        targetFileName: '',
+        sourceDomain: '',
+        targetDomain: '',
+        sourceEntries: src,
+        targetEntries: tgt,
+        mappings: computedMappings,
+        patterns: computedPatterns,
+        stats: computedStats,
+        checklistProgress,
+        metadata: projectMetadata,
+        resolvedDiscrepancies,
+        confidenceThreshold: threshold,
+        createdAt: projectCreatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
       if (computedStats.readinessScore >= 80) {
         confetti({
           particleCount: 70,
@@ -321,7 +363,12 @@ export function App() {
       setProjectName(customProjectName.trim());
     }
     await runPipeline(src, tgt, confidenceThreshold, profile);
-    toast.success(`Successfully analyzed ${src.length} source URLs against ${tgt.length} target URLs.`);
+    const countMsg = src.length > 0 && tgt.length > 0
+      ? `Successfully analyzed ${src.length} source URLs against ${tgt.length} target URLs.`
+      : src.length > 0
+      ? `Successfully loaded ${src.length} source URLs.`
+      : `Successfully loaded ${tgt.length} target URLs.`;
+    toast.success(countMsg);
     navigate(`/${slugify(finalProjectName)}/dashboard`);
   };
 
@@ -451,11 +498,23 @@ export function App() {
     }
   };
 
+  const handleUpdateSourceData = async (newSourceEntries: CrawlEntry[]) => {
+    setIsProcessing(true);
+    try {
+      await runPipeline(newSourceEntries, targetEntries || [], confidenceThreshold, projectProfile, true);
+      toast.success(`Updated Source crawl data with ${newSourceEntries.length} URLs.`);
+    } catch (err: any) {
+      toast.error(`Update failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleUpdateTargetData = async (newTargetEntries: CrawlEntry[]) => {
     setIsProcessing(true);
     
     if (!sourceEntries || sourceEntries.length === 0) {
-      setTargetEntries(newTargetEntries);
+      await runPipeline([], newTargetEntries, confidenceThreshold, projectProfile, true);
       setIsProcessing(false);
       return;
     }
@@ -594,7 +653,11 @@ export function App() {
     });
   };
 
-  const hasData = Boolean(sourceEntries && targetEntries && mappings.length > 0 && stats);
+  const hasData = Boolean(
+    ((sourceEntries && sourceEntries.length > 0) || (targetEntries && targetEntries.length > 0)) && 
+    mappings.length > 0 && 
+    stats
+  );
 
   const handleMergeGscData = (gscData: any[]) => {
     if (!sourceEntries) return;
@@ -843,12 +906,12 @@ export function App() {
         <DataSourcesModal
           isOpen={isDataSourcesOpen}
           onClose={() => setIsDataSourcesOpen(false)}
-          onDataParsed={(entries) => {
-            // Note: DataSourcesModal currently returns targetEntries here 
-            // for the initial crawl/upload, unless it's doing source.
-            // Wait, this callback is for the "Smart Merge". In the current logic,
-            // DataSourcesModal just returns the target entries to this prop.
-            handleUpdateTargetData(entries);
+          onDataParsed={(entries, type) => {
+            if (type === 'source') {
+              handleUpdateSourceData(entries);
+            } else {
+              handleUpdateTargetData(entries);
+            }
             setIsDataSourcesOpen(false);
           }}
           sourceEntries={sourceEntries || undefined}

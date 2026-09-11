@@ -14,6 +14,7 @@ import {
   UserCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import localforage from 'localforage';
 import { parseScreamingFrogCsv, parseScreamingFrogExcel, parseAnalyticsFile, parseXmlSitemap, AnalyticsPlatform } from '../utils/parser';
 import { CrawlEntry, MigrationProfile } from '../types/migration';
 
@@ -113,9 +114,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       if (type === 'source') {
         setSourceFile(file);
         setSourceEntries(parsed);
+        localforage.setItem('uploadZone_sourceEntries', parsed).catch(() => {});
       } else {
         setTargetFile(file);
         setTargetEntries(parsed);
+        localforage.setItem('uploadZone_targetEntries', parsed).catch(() => {});
       }
     } catch (err: any) {
       setError(err.message || 'Failed to parse file.');
@@ -187,13 +190,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   }, []);
 
   const handleStartAnalysis = async () => {
-    if (sourceEntries && targetEntries && (inputMode === 'crawl' || (sourceFile && targetFile))) {
+    if ((sourceEntries || targetEntries) && (inputMode === 'crawl' || sourceFile || targetFile || sourceEntries || targetEntries)) {
       setIsProcessing(true);
       
-      let finalSourceEntries = [...sourceEntries];
+      let finalSourceEntries = sourceEntries ? [...sourceEntries] : [];
+      let finalTargetEntries = targetEntries ? [...targetEntries] : [];
 
       try {
-        if (!analyticsFile && (gscConnected || ga4Connected)) {
+        if (!analyticsFile && (gscConnected || ga4Connected) && finalSourceEntries.length > 0) {
           let gscData: any[] = [];
           let ga4Data: any[] = [];
 
@@ -243,7 +247,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
               pageviews: ga4Row.pageviews || entry.pageviews || 0,
             };
           });
-        } else if (analyticsData) {
+        } else if (analyticsData && finalSourceEntries.length > 0) {
           finalSourceEntries = finalSourceEntries.map(entry => {
             const matchedAnalytics = analyticsData[entry.normalizedPath];
             if (matchedAnalytics) {
@@ -262,15 +266,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
       // Add brief timeout so UI can render loading state
       setTimeout(() => {
-        if (sourceEntries && targetEntries) {
-          localStorage.removeItem('uploadZone_draft');
-        }
+        localStorage.removeItem('uploadZone_draft');
+        localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+        localforage.removeItem('uploadZone_targetEntries').catch(() => {});
         
         onDataParsed(
           finalSourceEntries, 
-          targetEntries, 
-          inputMode === 'csv' ? (sourceFile?.name || 'source.csv') : sourceUrl, 
-          inputMode === 'csv' ? (targetFile?.name || 'target.csv') : targetUrl,
+          finalTargetEntries, 
+          inputMode === 'csv' ? (sourceFile?.name || 'source.csv') : (sourceUrl || 'source_crawl'), 
+          inputMode === 'csv' ? (targetFile?.name || 'target.csv') : (targetUrl || 'target_crawl'),
           profile,
           uploadProjectName
         );
@@ -308,6 +312,20 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         localStorage.removeItem('uploadZone_draft');
       } catch {}
     }
+
+    // Restore cached uncommitted crawl entries from localforage (quota-safe)
+    localforage.getItem<CrawlEntry[]>('uploadZone_sourceEntries').then(saved => {
+      if (saved && saved.length > 0) {
+        setSourceEntries(saved);
+      }
+    }).catch(() => {});
+
+    localforage.getItem<CrawlEntry[]>('uploadZone_targetEntries').then(saved => {
+      if (saved && saved.length > 0) {
+        setTargetEntries(saved);
+      }
+    }).catch(() => {});
+
     setDraftRestored(true);
   }, []);
 
@@ -387,8 +405,13 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             message: 'Crawl completed' 
           }
         }));
-        if (type === 'source') setSourceEntries(entries);
-        else setTargetEntries(entries);
+        if (type === 'source') {
+          setSourceEntries(entries);
+          localforage.setItem('uploadZone_sourceEntries', entries).catch(() => {});
+        } else {
+          setTargetEntries(entries);
+          localforage.setItem('uploadZone_targetEntries', entries).catch(() => {});
+        }
         setIsProcessing(false);
       } else if (data.type === 'paused') {
         eventSource.close();
@@ -1421,15 +1444,29 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
         <button
           onClick={handleStartAnalysis}
-          disabled={!sourceEntries || !targetEntries || isProcessing}
+          disabled={(!sourceEntries && !targetEntries) || isProcessing}
           className={`w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all shadow-lg ${
-            sourceEntries && targetEntries
+            sourceEntries || targetEntries
               ? 'bg-gradient-to-r from-brand-500 to-emerald-500 text-slate-950 hover:from-brand-400 hover:to-emerald-400 shadow-brand-500/25 cursor-pointer transform hover:-translate-y-0.5'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
           }`}
         >
-          <span>Run Migration & Parity Analysis</span>
-          <ArrowRight className="h-4 w-4" />
+          {sourceEntries && targetEntries ? (
+            <>
+              <span>Run Migration & Parity Analysis</span>
+              <ArrowRight className="h-4 w-4" />
+            </>
+          ) : sourceEntries ? (
+            <>
+              <span>Audit Source Site ({sourceEntries.length} URLs)</span>
+              <ArrowRight className="h-4 w-4" />
+            </>
+          ) : (
+            <>
+              <span>Audit Target Site ({targetEntries?.length || 0} URLs)</span>
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
         </button>
 
         <span className="text-xs text-slate-500 font-medium">or</span>

@@ -169,6 +169,38 @@ During concurrent site crawling (e.g., e-commerce sites like `blinkesim.com` wit
 6. **Guaranteed URL Retention**:
    - The outer `catch (error)` block ensures any page encountering an issue is still registered in `results` with its status code or error metadata, preventing dropped pages.
 
+---
+
+## 9. Crawl Persistence & Single-Site Audit Architecture ("0 URLs" Bug Fix)
+Users reported: *"why old crawls are not being saved?"* and the Project Manager modal displayed:
+`Blink E-sim ACTIVE | Saved: Sep 11, 5:56 PM • 0 URLs`
+
+### Root Cause Analysis
+1. **Mandatory Dual-Dataset Gate in `UploadZone`**:
+   - The button to proceed and finalize the project (`handleStartAnalysis`) was strictly conditioned on `!sourceEntries || !targetEntries`.
+   - When a user crawled only the Source website (`https://blinkesim.com`), `targetEntries` remained `null`. The button remained permanently disabled, leaving the user unable to proceed, create the migration pipeline, or save the project.
+2. **Component-Isolated React State**:
+   - When the live crawler completed, `UploadZone` stored `entries` solely in local React state (`const [sourceEntries, setSourceEntries] = useState(...)`). It was never persisted to IndexedDB or passed up to the global application state until both datasets were submitted.
+3. **Empty Project Auto-Save Overwrites**:
+   - In `App.tsx`, whenever a project name was set (e.g. "Blink E-sim"), the debounced auto-saver wrote to the database. Since `sourceEntries` and `targetEntries` had not been submitted by `UploadZone`, it saved an empty project with `sourceEntries: []` and `totalSourceUrls: 0`.
+4. **Cloud-Only Storage Single Point of Failure**:
+   - `storage.ts` previously bypassed local browser IndexedDB entirely and called `supabase.from('migrationProjects').upsert(...)`. If network latency occurred, anon key limits applied, or connection drops happened, the data was never retained locally.
+
+### Implemented Solutions
+1. **Offline-First Dual Persistence (`localforage` + Supabase)**:
+   - Configured `localforage` instances (`MigrateShieldDB` / `migrationProjects` and `projectSnapshots`) to store projects and crawl records directly in browser IndexedDB first.
+   - Saves succeed instantly with zero quota errors (unlike 5MB `localStorage`) and work completely offline. Supabase cloud synchronization runs asynchronously in the background.
+2. **Single-Site & Source-Only Audit Support**:
+   - Removed the artificial requirement for both source and target datasets to exist before proceeding.
+   - Users can now audit a single site (`Audit Source Site (X URLs)` or `Audit Target Site (X URLs)`). Unmapped source URLs are populated into mappings with baseline risk scoring, enabling full access to Crawl Data View, Architecture View, Infrastructure Auditor, and Exports without waiting for a staging site.
+3. **Immediate Uncommitted Crawl Caching**:
+   - As soon as a live crawl finishes or a file is parsed in `UploadZone`, the raw entries are cached into `localforage` (`uploadZone_sourceEntries` / `uploadZone_targetEntries`). If a user accidentally closes or reloads the tab, the crawled URLs are instantly restored.
+4. **Immediate Project Persistence in Pipeline**:
+   - `runPipeline` immediately saves the project with the full dataset into IndexedDB upon completing analysis, guaranteeing that the Project Manager displays the accurate URL count (e.g. `• 683 URLs`).
+5. **Bidirectional DataSourcesModal Support**:
+   - `DataSourcesModal` now passes a `type` parameter (`'source'` or `'target'`), allowing users to update their source audit or add staging target data at any time without data corruption.
+
+
 
 
 

@@ -199,12 +199,15 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                           <Clock className="h-3 w-3" />
                           <span>Saved: {formatDate(p.updatedAt)}</span>
                         </div>
-                        {p.stats && (
-                          <div className="flex items-center space-x-1">
-                            <span>•</span>
-                            <span>{p.stats.totalSourceUrls} URLs</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const urlCount = p.stats?.totalSourceUrls ?? (p.sourceEntries?.length || p.targetEntries?.length || 0);
+                          return (
+                            <div className="flex items-center space-x-1">
+                              <span>•</span>
+                              <span>{urlCount} URLs</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

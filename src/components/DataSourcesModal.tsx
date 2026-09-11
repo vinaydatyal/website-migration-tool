@@ -6,7 +6,7 @@ import { parseScreamingFrogCsv, parseScreamingFrogExcel } from '../utils/parser'
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onDataParsed: (entries: CrawlEntry[]) => void;
+  onDataParsed: (entries: CrawlEntry[], type: 'source' | 'target') => void;
   sourceEntries?: CrawlEntry[];
   onMergeAnalytics?: (enrichedEntries: CrawlEntry[]) => void;
 }
@@ -281,8 +281,7 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       // Briefly show success state then trigger callback (in a real app you might want to wait for user to hit 'Merge Data')
       setTimeout(() => {
         setIsProcessing(false);
-        // We will just call onDataParsed for now, though it only handles targetEntries in App.tsx
-        onDataParsed(parsed);
+        onDataParsed(parsed, type);
       }, 500);
 
     } catch (err: any) {
@@ -345,8 +344,7 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
         
         setTimeout(() => {
           setIsProcessing(false);
-          // In the modal, we trigger onDataParsed which currently updates targetEntries in App
-          onDataParsed(entries);
+          onDataParsed(entries, type);
         }, 500);
       } else if (data.type === 'paused') {
         eventSource.close();
