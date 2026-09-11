@@ -206,6 +206,9 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   const rateLimit = config?.rateLimit || 0;
   const maxConcurrency = config?.concurrency || 5; // Limits memory usage on Free Tiers
   
+  // Track all queued URLs to prevent duplicate links from exploding queue and memory
+  const enqueued = new Set([...visited, ...toVisit.map(item => normalizeUrl(item?.url)).filter(Boolean)]);
+  
   let exclusionRegex = null;
   if (config?.exclusions) {
     try {
@@ -260,7 +263,9 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         sitemapUrls.push(`${origin}/sitemap.xml`);
       }
 
-      const fetchSitemap = async (sUrl) => {
+      const fetchSitemap = async (sUrl, depth = 0, fetched = new Set()) => {
+        if (depth > 5 || fetched.has(sUrl)) return [];
+        fetched.add(sUrl);
         try {
           const res = await fetch(sUrl).catch(() => null);
           if (!res || !res.ok) return [];
@@ -270,7 +275,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           if (text.includes('<sitemapindex')) {
              const nestedMatches = text.matchAll(/<loc>(.*?)<\/loc>/g);
              for (const m of nestedMatches) {
-                const nestedUrls = await fetchSitemap(m[1].trim());
+                const nestedUrls = await fetchSitemap(m[1].trim(), depth + 1, fetched);
                 urls.push(...nestedUrls);
              }
           } else {
@@ -290,12 +295,13 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
          const discovered = await fetchSitemap(sitemapUrl);
          for (const dUrl of discovered) {
            const normalized = normalizeUrl(dUrl);
-           if (normalized && !visited.has(normalized) && !addedFromSitemap.has(normalized)) {
+           if (normalized && !visited.has(normalized) && !enqueued.has(normalized)) {
               let shouldAdd = true;
               if (exclusionRegex && exclusionRegex.test(normalized)) shouldAdd = false;
               try { if (new URL(normalized).hostname !== domain) shouldAdd = false; } catch { shouldAdd = false; }
               
               if (shouldAdd) {
+                 enqueued.add(normalized);
                  toVisit.push({ url: dUrl, depth: 1 });
                  addedFromSitemap.add(normalized);
               }
@@ -318,64 +324,59 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
     }
   }
 
-  await new Promise((resolve) => {
-    const processNext = async () => {
+  // Iterative, non-recursive worker pool (bounded call stack O(1))
+  const runWorker = async (workerId) => {
+    while (isCrawling && crawledCount < maxPages) {
       // 1. Check external termination signals
       if (getIsStopped && getIsStopped()) {
         isCrawling = false;
+        break;
       }
       if (getIsPaused && getIsPaused()) {
         isCrawling = false;
         isPausedState = true;
+        break;
       }
 
-      // 2. Base case: Finish the pool
-      if (!isCrawling || (toVisit.length === 0 && activeWorkers === 0) || crawledCount >= maxPages) {
-        if (activeWorkers === 0) resolve(); // All workers drained
-        return;
+      // 2. Iteratively retrieve the next valid item from queue (No recursion!)
+      let currentItem = null;
+      while (toVisit.length > 0) {
+        const candidate = toVisit.shift();
+        if (!candidate || !candidate.url) continue;
+        const normalized = normalizeUrl(candidate.url);
+        if (!normalized || visited.has(normalized)) continue;
+        if (exclusionRegex && exclusionRegex.test(normalized)) continue;
+        try {
+          if (new URL(normalized).hostname !== domain) continue;
+        } catch {
+          continue;
+        }
+
+        currentItem = { ...candidate, normalized };
+        break;
       }
 
-      // 3. Waiting case: Idle until another worker adds links
-      if (toVisit.length === 0) return;
-      
-      // 4. Concurrency limit
-      if (activeWorkers >= maxConcurrency) return;
-
-      // 5. Claim a task
-      activeWorkers++;
-      const currentItem = toVisit.shift();
+      // 3. Handle idle or termination condition
       if (!currentItem) {
-        activeWorkers--;
-        processNext();
-        return;
-      }
-      
-      const { url: currentUrl, depth: currentDepth } = currentItem;
-      const normalized = normalizeUrl(currentUrl);
-
-      // 6. Validate URL
-      let shouldCrawl = true;
-      if (!normalized || visited.has(normalized)) shouldCrawl = false;
-      if (exclusionRegex && exclusionRegex.test(normalized)) shouldCrawl = false;
-      try {
-        const u = new URL(normalized);
-        if (u.hostname !== domain) shouldCrawl = false;
-      } catch { shouldCrawl = false; }
-
-      if (!shouldCrawl) {
-        activeWorkers--;
-        processNext(); // Try the next link immediately
-        return;
+        // If other workers are active, wait briefly as they might discover more internal links
+        if (activeWorkers > 0) {
+          await new Promise(r => setTimeout(r, 150));
+          continue;
+        } else {
+          // All workers idle and queue is empty -> crawl is finished
+          break;
+        }
       }
 
-      // 7. Mark visited and update progress
-      visited.add(normalized);
+      // 4. Mark worker active & URL visited
+      activeWorkers++;
+      visited.add(currentItem.normalized);
       crawledCount++;
 
       const currentDiscovered = visited.size + toVisit.length;
       onProgress({ 
         type: 'progress', 
-        message: `Crawling ${normalized}`, 
+        message: `Crawling ${currentItem.normalized}`, 
         current: crawledCount, 
         total: currentDiscovered,
         discovered: currentDiscovered,
@@ -383,11 +384,8 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         maxPages
       });
 
-      // 8. Fire off another worker to hit max concurrency if queue allows
-      processNext();
-
-      // 9. Process the URL
-      let workerPage;
+      // 5. Navigate and extract page metadata
+      let workerPage = null;
       try {
         workerPage = await browser.newPage();
         
@@ -402,7 +400,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           'Sec-Ch-Ua-Platform': '"Windows"'
         });
 
-        // Speed hack: Block heavy non-HTML resources
+        // Block heavy non-HTML resources to optimize memory and speed
         await workerPage.setRequestInterception(true);
         workerPage.on('request', (req) => {
           if (req.isInterceptResolutionHandled && req.isInterceptResolutionHandled()) return;
@@ -413,25 +411,25 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
               req.continue().catch(() => {});
             }
           } catch (err) {
-            // Ignore synchronous errors if the page closed before the request resolved
+            // Ignore synchronous abort error if page is closing
           }
         });
 
         // Navigate with domcontentloaded to handle fast initial paint without getting destroyed by early redirects
         let response = null;
         try {
-          response = await workerPage.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          response = await workerPage.goto(currentItem.normalized, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (navError) {
           const msg = (navError.message || '').toLowerCase();
           if (msg.includes('execution context was destroyed') || msg.includes('navigation') || msg.includes('net::err_aborted')) {
             // A redirect occurred during initial navigation. Wait for new document.
             await workerPage.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
           } else if (!msg.includes('timeout')) {
-            console.warn(`Navigation notice for ${normalized}:`, navError.message);
+            console.warn(`Navigation notice for ${currentItem.normalized}:`, navError.message);
           }
         }
         
-        // Node.js delay (does not bind to browser execution context) allowing client-side hydration & redirects to trigger
+        // Delay allowing client-side hydration & redirects to trigger
         await new Promise(resolve => setTimeout(resolve, 600));
         await workerPage.waitForNetworkIdle({ idleTime: 500, timeout: 2500 }).catch(() => {});
 
@@ -443,16 +441,17 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           }
         } catch (e) {}
 
-        if (finalLandedUrl && finalLandedUrl !== normalized) {
+        if (finalLandedUrl && finalLandedUrl !== currentItem.normalized) {
           visited.add(finalLandedUrl);
+          enqueued.add(finalLandedUrl);
         }
 
         const statusCode = response ? response.status() : 200;
         
         if (statusCode >= 400) {
           results.push({
-            url: normalized,
-            redirectUrl: (finalLandedUrl && finalLandedUrl !== normalized) ? finalLandedUrl : undefined,
+            url: currentItem.normalized,
+            redirectUrl: (finalLandedUrl && finalLandedUrl !== currentItem.normalized) ? finalLandedUrl : undefined,
             title: '', metaDescription: '', h1: '', h2: '',
             statusCode, wordCount: 0, inlinks: 1, outlinks: 0, outgoingLinks: []
           });
@@ -461,8 +460,8 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           const data = await safeExtractMetadata(workerPage);
           
           results.push({
-            url: normalized,
-            redirectUrl: (finalLandedUrl && finalLandedUrl !== normalized) ? finalLandedUrl : undefined,
+            url: currentItem.normalized,
+            redirectUrl: (finalLandedUrl && finalLandedUrl !== currentItem.normalized) ? finalLandedUrl : undefined,
             title: data.title,
             metaDescription: data.metaDescription,
             h1: data.h1,
@@ -474,12 +473,17 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
             outgoingLinks: data.links
           });
           
-          // Queue new internal links
+          // Queue new internal links (deduplicated by enqueued Set)
           for (const link of data.links) {
             const nLink = normalizeUrl(link);
-            if (nLink && !visited.has(nLink) && currentDepth < maxDepth) {
+            if (nLink && !visited.has(nLink) && !enqueued.has(nLink) && currentItem.depth < maxDepth) {
               if (!exclusionRegex || !exclusionRegex.test(nLink)) {
-                toVisit.push({ url: nLink, depth: currentDepth + 1 });
+                try {
+                  if (new URL(nLink).hostname === domain) {
+                    enqueued.add(nLink);
+                    toVisit.push({ url: nLink, depth: currentItem.depth + 1 });
+                  }
+                } catch {}
               }
             }
           }
@@ -490,12 +494,12 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           await new Promise(r => setTimeout(r, rateLimit));
         }
       } catch (error) {
-        console.warn(`Non-fatal crawl note for ${normalized}:`, error.message);
+        console.warn(`Non-fatal crawl note for ${currentItem.normalized}:`, error.message);
         // Ensure the URL is recorded in results so it's not silently lost
-        const existingIndex = results.findIndex(r => r.url === normalized);
+        const existingIndex = results.findIndex(r => r.url === currentItem.normalized);
         if (existingIndex === -1) {
           results.push({
-            url: normalized,
+            url: currentItem.normalized,
             title: '',
             metaDescription: '',
             h1: '',
@@ -512,15 +516,13 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         // ALWAYS clean up the page context to prevent memory leaks
         if (workerPage) await workerPage.close().catch(() => {});
         activeWorkers--;
-        processNext(); // Notify pool that a slot is free
       }
-    };
-
-    // Kickoff initial batch of workers
-    for (let i = 0; i < maxConcurrency; i++) {
-      processNext();
     }
-  });
+  };
+
+  // Launch worker pool with maxConcurrency concurrent workers
+  const workers = Array.from({ length: maxConcurrency }, (_, id) => runWorker(id));
+  await Promise.all(workers);
 
   const totalDiscovered = visited.size + toVisit.length;
   const queuedCount = toVisit.length;

@@ -200,7 +200,33 @@ Users reported: *"why old crawls are not being saved?"* and the Project Manager 
 5. **Bidirectional DataSourcesModal Support**:
    - `DataSourcesModal` now passes a `type` parameter (`'source'` or `'target'`), allowing users to update their source audit or add staging target data at any time without data corruption.
 
+---
 
+## 10. Crawler Concurrency Pool Refactoring (`RangeError: Maximum call stack size exceeded` Fix)
+During extensive multi-lingual / currency variant crawls (e.g. `blinkesim.com` with `?wmc-currency=EUR` variants):
+```
+Exception in PromiseRejectCallback:
+file:///app/server/crawler.js:517
+RangeError: Maximum call stack size exceeded
+```
 
+### Root Cause Analysis
+1. **Recursive `processNext` Function Chaining**:
+   - The worker pool previously relied on recursive function calls: `processNext()` calling itself when an item failed `shouldCrawl`, when a worker finished, or when spawning concurrent workers.
+   - For websites with extensive internal link structures (e.g. currency selectors, country filters, footers with 2,000+ links), `toVisit` accumulated thousands of links that had already been visited or were filtered.
+   - `processNext()` synchronously popped invalid/visited items and immediately called `processNext()` again in the same tick without awaiting or yielding to the event loop.
+   - When the synchronous recursion chain exceeded Node.js V8 call stack limits (~10,000 frames), V8 threw `RangeError: Maximum call stack size exceeded`.
+2. **Missing Queue Deduplication (`enqueued` Set)**:
+   - Previously, discovered links were only checked against `visited.has(nLink)`. If multiple pages linked to the same URL, that URL was queued into `toVisit` repeatedly before being crawled, causing `toVisit` to bloat into tens of thousands of duplicate entries.
 
-
+### Implemented Solutions
+1. **Bounded Iterative Worker Pool ($O(1)$ Stack Depth)**:
+   - Replaced recursive `processNext()` chaining with long-running, iterative `runWorker` `while` loops.
+   - Workers run concurrently using `Promise.all(workers)` with zero recursion. Call stack depth remains constant $O(1)$ throughout the entire crawl lifecycle.
+   - Filtered/visited candidates are skipped in an internal iterative `while (toVisit.length > 0)` loop rather than via recursive calls.
+   - Idle workers await briefly with `setTimeout` if other workers are active, terminating cleanly once all workers are idle and the queue is completely drained.
+2. **In-Flight Queue Deduplication (`enqueued` Set)**:
+   - Added an `enqueued` Set in `crawlSite` tracking all URLs currently in the queue or already processed.
+   - Newly discovered links from HTML pages and sitemaps are checked against `!enqueued.has(nLink)` before insertion, preventing exponential queue inflation.
+3. **Guarded Recursive Sitemap Parsing**:
+   - Added `depth <= 5` and a `fetched` URL Set to `fetchSitemap` to prevent infinite loops on circular or malformed sitemap indexes.
