@@ -230,3 +230,35 @@ RangeError: Maximum call stack size exceeded
    - Newly discovered links from HTML pages and sitemaps are checked against `!enqueued.has(nLink)` before insertion, preventing exponential queue inflation.
 3. **Guarded Recursive Sitemap Parsing**:
    - Added `depth <= 5` and a `fetched` URL Set to `fetchSitemap` to prevent infinite loops on circular or malformed sitemap indexes.
+
+---
+
+## 11. GSC & GA4 OAuth Connection Fixes
+
+### Root Causes (both `UploadZone.tsx` and `DataSourcesModal.tsx`)
+
+1. **Popup Blocked by Browser**:
+   - The previous `handleOAuth` called `fetch('/api/gsc/auth?service=...')` **before** calling `window.open()`. Modern browsers require popups to be opened synchronously during a direct user click event. Waiting for the async `fetch` to resolve caused the browser to silently block the popup — no error is thrown, the window simply never appears.
+
+2. **Redirect URI Mismatch**:
+   - `server/gsc.js` hardcoded `REDIRECT_URI` to `http://localhost:3001/api/auth/google/callback`. In Railway production, the app serves traffic through the Railway domain. The OAuth popup redirected to `3001` (backend port), but the `window.opener` lived on a different origin (`4000` or the Railway hostname), causing `postMessage` to fail silently.
+   - Additionally, the Google Cloud Console OAuth client must have `https://<your-railway-domain>/api/auth/google/callback` registered as an **Authorized Redirect URI** (not just the root `/`).
+
+3. **No Session Restoration on Mount**:
+   - Previously, `gscConnected` and `ga4Connected` always defaulted to `false` on component mount, even if valid tokens existed from a previous session in `.gsc_tokens.json`. Users had to re-authenticate on every page load.
+
+### Implemented Solutions
+
+1. **Popup Opened Synchronously** (`UploadZone.tsx`, `DataSourcesModal.tsx`):
+   - `handleOAuth` now opens `window.open('', 'GoogleAuth', ...)` synchronously in the click handler (with no `await`), **then** navigates the popup to the OAuth URL once the fetch resolves. This satisfies the browser's user-gesture popup policy.
+
+2. **Dynamic `redirect_uri` Generation** (`server/gsc.js`):
+   - `getOAuthClient(req)` now reads `req.headers['x-forwarded-proto']` and `req.headers.host` to dynamically build the redirect URI, matching wherever the app is deployed (local, Railway, Vercel, etc.).
+
+3. **Session Restore on Mount** (`UploadZone.tsx`, `DataSourcesModal.tsx`):
+   - On mount (and when the modal opens), both components silently ping `/api/gsc/sites` and `/api/ga4/properties`. A successful response (non-401) means active tokens exist, so `gscConnected`/`ga4Connected` are set to `true` and the dropdowns are populated automatically — no re-authentication needed.
+
+### Google Cloud Console Requirement
+- Under **Authorized Redirect URIs**, you must add the exact callback path:
+  - `https://website-migration-tool.up.railway.app/api/auth/google/callback`
+  - `http://localhost:3001/api/auth/google/callback`

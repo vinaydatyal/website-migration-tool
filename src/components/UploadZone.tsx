@@ -134,12 +134,18 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
   const handleOAuth = async (service: 'gsc' | 'ga4') => {
     try {
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open('', 'GoogleAuth', `width=${width},height=${height},left=${left},top=${top}`);
       const res = await fetch(`/api/gsc/auth?service=${service}`);
       const data = await res.json();
-      if (data.url) {
-        window.open(data.url, 'GoogleAuth', 'width=500,height=600');
+      if (data.url && popup) {
+        popup.location.href = data.url;
       } else {
-        toast.error(data.error);
+        if (popup) popup.close();
+        toast.error(data.error || 'Failed to initialize OAuth');
       }
     } catch (e: any) {
       toast.error(e.message);
@@ -173,6 +179,22 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   };
 
   useEffect(() => {
+    // Restore existing sessions if tokens are already saved
+    fetch('/api/gsc/sites').then(r => r.json()).then(data => {
+      if (data.sites) {
+        setGscConnected(true);
+        setGscSites(data.sites);
+        if (data.sites.length > 0) setSelectedGscSite(data.sites[0]);
+      }
+    }).catch(() => {});
+    fetch('/api/ga4/properties').then(r => r.json()).then(data => {
+      if (data.properties) {
+        setGa4Connected(true);
+        setGa4Properties(data.properties);
+        if (data.properties.length > 0) setSelectedGa4Property(data.properties[0].id);
+      }
+    }).catch(() => {});
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'GSC_AUTH_SUCCESS') {
         const service = event.data.service;
