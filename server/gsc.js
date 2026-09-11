@@ -41,8 +41,13 @@ function saveTokensToDisk() {
   }
 }
 
-function getOAuthClient() {
-  return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+function getOAuthClient(req) {
+  let redirectUri = REDIRECT_URI;
+  if (req && req.headers && req.headers.host) {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    redirectUri = `${protocol}://${req.headers.host}/api/auth/google/callback`;
+  }
+  return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, redirectUri);
 }
 
 export function generateAuthUrl(req, res) {
@@ -52,7 +57,7 @@ export function generateAuthUrl(req, res) {
     });
   }
 
-  const oauth2Client = getOAuthClient();
+  const oauth2Client = getOAuthClient(req);
   const service = req.query.service || 'gsc';
   const scopes = [];
   if (service === 'gsc') {
@@ -82,7 +87,7 @@ export async function handleAuthCallback(req, res) {
   }
 
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req);
     const { tokens } = await oauth2Client.getToken(code);
     
     let service = 'gsc';
@@ -125,7 +130,7 @@ export async function fetchGscData(req, res) {
   }
 
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req);
     oauth2Client.setCredentials(tokens);
 
     const searchConsole = google.webmasters({
@@ -172,7 +177,7 @@ export async function fetchGscSites(req, res) {
   }
 
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req);
     oauth2Client.setCredentials(tokens);
 
     const searchConsole = google.webmasters({
@@ -197,7 +202,7 @@ export async function fetchGa4Properties(req, res) {
   }
 
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req);
     oauth2Client.setCredentials(tokens);
 
     const analyticsadmin = google.analyticsadmin({
@@ -239,7 +244,7 @@ export async function fetchGa4Data(req, res) {
   }
 
   try {
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req);
     oauth2Client.setCredentials(tokens);
 
     const analyticsdata = google.analyticsdata({

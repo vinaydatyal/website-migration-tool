@@ -56,6 +56,24 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
   const [draftRestored, setDraftRestored] = useState(false);
 
   useEffect(() => {
+    if (isOpen) {
+      fetch('/api/gsc/sites').then(res => res.json()).then(data => {
+        if (data.sites) {
+          setGscConnected(true);
+          setGscSites(data.sites);
+          if (data.sites.length > 0) setSelectedGscSite(data.sites[0]);
+        }
+      }).catch(() => {});
+
+      fetch('/api/ga4/properties').then(res => res.json()).then(data => {
+        if (data.properties) {
+          setGa4Connected(true);
+          setGa4Properties(data.properties);
+          if (data.properties.length > 0) setSelectedGa4Property(data.properties[0].id);
+        }
+      }).catch(() => {});
+    }
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'GSC_AUTH_SUCCESS') {
         const service = event.data.service;
@@ -70,16 +88,23 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [isOpen]);
 
   const handleOAuth = async (service: 'gsc' | 'ga4') => {
     try {
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open('', 'GoogleAuth', `width=${width},height=${height},left=${left},top=${top}`);
+
       const res = await fetch(`/api/gsc/auth?service=${service}`);
       const data = await res.json();
-      if (data.url) {
-        window.open(data.url, 'GoogleAuth', 'width=500,height=600');
+      if (data.url && popup) {
+        popup.location.href = data.url;
       } else {
-        setError(data.error);
+        if (popup) popup.close();
+        setError(data.error || 'Failed to initialize OAuth');
       }
     } catch (e: any) {
       setError(e.message);
