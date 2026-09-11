@@ -52,9 +52,7 @@ function getOAuthClient(req) {
 
 export function generateAuthUrl(req, res) {
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    return res.status(500).json({ 
-      error: 'Google OAuth credentials missing. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your environment.' 
-    });
+    return res.status(500).send('Google OAuth credentials missing. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your environment.');
   }
 
   const oauth2Client = getOAuthClient(req);
@@ -76,8 +74,11 @@ export function generateAuthUrl(req, res) {
     prompt: 'consent'
   });
 
-  res.json({ url });
+  // Redirect directly — this lets the client open the popup to this endpoint
+  // without needing an async fetch first (which browsers block as popup navigation).
+  res.redirect(url);
 }
+
 
 export async function handleAuthCallback(req, res) {
   const { code, state } = req.query;

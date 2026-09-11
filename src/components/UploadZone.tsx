@@ -132,24 +132,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
     }
   }, []);
 
-  const handleOAuth = async (service: 'gsc' | 'ga4') => {
-    try {
-      const width = 500;
-      const height = 600;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const popup = window.open('', 'GoogleAuth', `width=${width},height=${height},left=${left},top=${top}`);
-      const res = await fetch(`/api/gsc/auth?service=${service}`);
-      const data = await res.json();
-      if (data.url && popup) {
-        popup.location.href = data.url;
-      } else {
-        if (popup) popup.close();
-        toast.error(data.error || 'Failed to initialize OAuth');
-      }
-    } catch (e: any) {
-      toast.error(e.message);
-    }
+  const handleOAuth = (service: 'gsc' | 'ga4') => {
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    window.open(
+      `/api/gsc/auth?service=${service}`,
+      'GoogleAuth',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
   };
 
   const fetchGscSites = async () => {
