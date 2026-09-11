@@ -26,7 +26,7 @@ interface UploadZoneProps {
     targetName: string,
     profile: MigrationProfile,
     projectName?: string
-  ) => void;
+  ) => void | Promise<void>;
   onLoadSample: () => void;
 }
 
@@ -264,13 +264,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         toast.error(err.message || 'Failed to merge analytics data');
       }
 
-      // Add brief timeout so UI can render loading state
-      setTimeout(() => {
+      // Yield briefly so the loading state renders before the matching pipeline starts.
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      try {
         localStorage.removeItem('uploadZone_draft');
         localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
         localforage.removeItem('uploadZone_targetEntries').catch(() => {});
-        
-        onDataParsed(
+
+        await onDataParsed(
           finalSourceEntries, 
           finalTargetEntries, 
           inputMode === 'csv' ? (sourceFile?.name || 'source.csv') : (sourceUrl || 'source_crawl'), 
@@ -278,7 +280,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           profile,
           uploadProjectName
         );
-      }, 100);
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to run the migration analysis');
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 

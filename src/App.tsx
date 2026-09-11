@@ -655,7 +655,6 @@ export function App() {
 
   const hasData = Boolean(
     ((sourceEntries && sourceEntries.length > 0) || (targetEntries && targetEntries.length > 0)) && 
-    mappings.length > 0 && 
     stats
   );
 
