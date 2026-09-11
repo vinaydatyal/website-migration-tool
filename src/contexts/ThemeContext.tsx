@@ -11,22 +11,27 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    // Check localStorage first, otherwise default to 'light'
-    const stored = localStorage.getItem('app-theme');
-    if (stored === 'dark' || stored === 'light') {
-      return stored;
+    try {
+      const stored = localStorage.getItem('app-theme');
+      if (stored === 'dark' || stored === 'light') {
+        return stored;
+      }
+    } catch {
+      // Fallback if localStorage is restricted
     }
     return 'light';
   });
 
   useEffect(() => {
-    // Apply theme to the document HTML element
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
     
-    // Save preference
-    localStorage.setItem('app-theme', theme);
+    try {
+      localStorage.setItem('app-theme', theme);
+    } catch {
+      // Ignore storage errors in restricted environments
+    }
   }, [theme]);
 
   const toggleTheme = () => {

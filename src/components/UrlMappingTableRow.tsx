@@ -54,7 +54,7 @@ export const UrlMappingTableRow = React.memo(({
     if (!urlToPing || m.status === 'GONE_410') return;
     setIsPinging(true);
     try {
-      const res = await fetch(`http://localhost:3001/api/ping-url?url=${encodeURIComponent(urlToPing)}`);
+      const res = await fetch(`/api/ping-url?url=${encodeURIComponent(urlToPing)}`);
       const data = await res.json();
       setPingStatus(data.status);
     } catch (err) {

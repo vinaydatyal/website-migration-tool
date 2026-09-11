@@ -1,0 +1,142 @@
+# Technical Developer Notes: Website Migration Tool
+
+## 1. Project Overview & Architecture
+The **Website Migration Tool** is a full-stack SEO parity and URL redirect mapping suite designed for complex website migrations (domain changes, CMS migrations, site restructures).
+
+### Core Stack
+- **Frontend**: React 19, TypeScript, Vite, TailwindCSS, React Router v7, Lucide Icons, Sonner toasts, Recharts, LocalForage (IndexedDB).
+  - Dev server port: `4000` (per project rule: `http://localhost:4000`).
+  - API Proxy: `/api` forwarded to `http://localhost:3001`.
+- **Backend**: Node.js, Express (running on port `3001`).
+  - Web scraping & crawler integration: Puppeteer (concurrency-managed, timeout-resilient).
+  - Integrations: Google Search Console (OAuth & Search Console API), DNS/SSL auditor (`dns/promises`, `tls`), robots.txt parser, XML sitemap validator, PDF generation.
+  - Storage: IndexedDB via LocalForage for client-side project persistence and snapshots; optional Supabase integration for cloud sync.
+
+---
+
+## 2. Directory & Component Breakdown
+
+```
+Website Migration Tool/
+├── server/
+│   └── index.js                   # Express server (Port 3001) - Puppeteer, DNS/SSL, Robots, Sitemaps, PDF, GSC
+├── src/
+│   ├── components/
+│   │   ├── ArchitectureView.tsx    # Visual system/site structure view
+│   │   ├── CrawlDataView.tsx       # Raw crawl data inspection & filtering
+│   │   ├── DashboardOverview.tsx   # Migration KPI summary cards & graphs
+│   │   ├── DataSourcesModal.tsx    # Source ingestion (CSV, Live Crawl, GSC)
+│   │   ├── DeltaReportModal.tsx    # Incremental update comparison
+│   │   ├── DomainSwapModal.tsx     # One-click source/target domain replacement
+│   │   ├── ExportModal.tsx         # Redirect rules (Nginx, Apache, Cloudflare, CSV, PDF)
+│   │   ├── HistorySidebar.tsx      # Version history & undo/redo tracking
+│   │   ├── ImportMapModal.tsx      # Existing redirect map imports
+│   │   ├── InfrastructureAuditorView.tsx # DNS, SSL, Robots.txt, Sitemap verification
+│   │   ├── KnowledgeBaseSidebar.tsx# Migration playbooks & SEO guidance
+│   │   ├── LinkAuditorView.tsx     # Internal link & anchor text validation
+│   │   ├── MigrationChecklist.tsx  # Interactive migration launch checklist
+│   │   ├── Navbar.tsx              # Navigation, project selector, action triggers
+│   │   ├── ProjectManagerModal.tsx # Project management & IndexedDB switching
+│   │   ├── RegexSynthesizerView.tsx# Automatic regex pattern generator for redirects
+│   │   ├── RestartPipelineModal.tsx# Pipeline reset and re-matching
+│   │   ├── SeoParityView.tsx       # Meta title, description, H1, canonical parity auditor
+│   │   ├── UploadZone.tsx          # Initial file drag & drop onboarding
+│   │   ├── UrlMappingTable.tsx     # Virtualized URL mapping table with overrides
+│   │   ├── UrlMappingTableRow.tsx  # URL mapping row with inline status ping
+│   │   └── ValidationView.tsx      # Pre-launch and post-launch validation suites
+│   ├── types/
+│   │   └── migration.ts            # Type definitions for CrawlEntry, UrlMapping, Stats, etc.
+│   ├── utils/
+│   │   ├── matcher.ts              # Async matching algorithm (exact path, slug, Levenshtein, semantic)
+│   │   ├── parityAuditor.ts        # SEO parity discrepancies & scoring
+│   │   ├── exporters.ts            # Format converters for Apache, Nginx, CSV, Cloudflare
+│   │   ├── storage.ts              # LocalForage / IndexedDB persistence layer
+│   │   └── text.ts                 # String distance & normalization utilities
+│   ├── App.tsx                     # Top-level state orchestrator and routing
+│   └── main.tsx                    # React DOM entry point
+├── vite.config.ts                  # Vite config (Port 4000, /api proxy to localhost:3001)
+├── package.json                    # Project metadata and run scripts
+└── TECHNICAL_NOTES.md              # Technical Developer Notes (continuously maintained)
+```
+
+---
+
+## 3. Development Setup & Port Rules
+- **Frontend**: Must run on `http://localhost:4000`.
+- **Backend**: Runs on `http://localhost:3001`.
+- **Scripts**:
+  - `npm run dev`: Runs both frontend and backend concurrently.
+  - `npm run dev:frontend`: Starts Vite on port 4000.
+  - `npm run dev:backend`: Starts Express backend on port 3001.
+
+---
+
+## 4. Current Work & Status
+- **Pending Git Changes**:
+  - `src/components/ExportModal.tsx`: Converted `/api/generate-pdf` from absolute to relative URL to use Vite proxy.
+  - `src/components/InfrastructureAuditorView.tsx`: Converted DNS, robots, and sitemap check endpoints to relative URLs.
+  - `src/components/UrlMappingTableRow.tsx`: Converted `/api/ping-url` to relative URL.
+  - `src/components/ErrorBoundary.tsx`: Added global ErrorBoundary with recovery actions (reload, clear cache & reset, home).
+  - `src/main.tsx`: Wrapped root application in `GlobalErrorBoundary` and added startup purge for legacy oversized `uploadZone_draft`.
+  - `src/components/UploadZone.tsx`: Excluded `sourceEntries` and `targetEntries` from `uploadZone_draft` in `localStorage`; added QuotaExceededError purge handler.
+  - `src/contexts/ThemeContext.tsx`, `DataSourcesModal.tsx`: Guarded `localStorage` against `SecurityError` and storage quota limits.
+- **Server Status**:
+  - Production deployment live on Railway.
+
+---
+
+## 5. Blank Screen Diagnostics & Root Causes
+When users encounter a blank/black screen at `.../untitled-project/dashboard`:
+
+### Root Causes
+1. **`QuotaExceededError` in `UploadZone.tsx` (CONFIRMED)**:
+   - `UploadZone.tsx` was saving the full `sourceEntries` and `targetEntries` arrays into `localStorage.setItem('uploadZone_draft', ...)`.
+   - Screaming Frog crawl files contain thousands of detailed URL objects with inlinks, outlinks, canonicals, H1s, titles, and word counts.
+   - This easily exceeded the browser's hard **5MB `localStorage` limit**, throwing an unhandled `QuotaExceededError: Failed to execute 'setItem' on 'Storage'`.
+   - Because it ran inside a top-level `useEffect` in React without a try/catch or error boundary, React unmounted the entire app tree into a blank black screen.
+2. **Stale Deployment Chunk Hash**:
+   - When new builds are pushed to production (Railway), Vite assigns new content hashes to JS chunks. If a browser has cached the previous `index.html` referencing an old chunk that was deleted on the server, a 404/ChunkLoadError occurs, preventing the React bundle from running.
+3. **Storage Access Permission Restrictions**:
+   - Browser extensions (privacy/adblockers) or third-party storage restrictions can cause `localStorage.getItem()` or `localStorage.setItem()` to throw a `SecurityError: The operation is insecure`, crashing React if unguarded.
+
+### Implemented Safeguards
+- **Excluded Large Datasets from `localStorage`**: `UploadZone.tsx` now only stores lightweight configuration (URLs, project name, crawl settings) in `localStorage`. Raw crawl datasets belong exclusively in IndexedDB.
+- **Auto-Purge on Quota Error**: If `localStorage.setItem` ever throws a `QuotaExceededError`, `uploadZone_draft` is automatically removed to free space.
+- **Startup Self-Healing in `main.tsx`**: Checks on launch for legacy oversized drafts (>500KB) and removes them before mounting React.
+- **Global Error Boundary**: `<GlobalErrorBoundary>` catches any uncaught runtime exceptions and displays a recovery UI with "Reload Page" and "Clear Cache & Reset" options.
+- **Vite Chunk Preload Listener**: Added `window.addEventListener('vite:preloadError')` in `main.tsx` to automatically reload the page if a user attempts to load a chunk replaced by a new deployment.
+- **Centralized Safe Storage Utility**: Implemented `src/utils/safeStorage.ts` enforcing a 250 KB per-key ceiling on `localStorage`.
+
+---
+
+## 6. Guidelines to Prevent Storage & Blank Screen Failures
+1. **Strict Storage Tiering**:
+   - `localStorage`: Only for primitive, low-cardinality state (< 50 KB): active theme, user preferences, last visited project ID.
+   - `IndexedDB` (via `LocalForage`): All structured data, crawl rows, URL mappings, redirect lists, and snapshot histories.
+2. **Never Call Raw `localStorage.setItem` for Complex Objects**:
+   - Use `safeStorage.setItem()` from `src/utils/safeStorage.ts`. It prevents serialization of payloads > 250 KB, captures quota errors, and protects React lifecycle hooks from uncaught crashes.
+3. **Always Keep `GlobalErrorBoundary` Active**:
+   - Never remove `GlobalErrorBoundary` from `main.tsx`. Any unexpected rendering fault must be caught and presented with a user-facing reset option rather than unmounting the React root.
+
+---
+
+## 7. Crawl Metrics & Progress Tracking (Discovered vs. Crawled)
+Previously, the crawler UI only showed a transient `0 / 0 pages` counter while discovering sitemaps, and once finished, simply replaced the view with `{sourceEntries.length} URLs Crawled`, hiding how many URLs were in the sitemap/queue versus how many were actually crawled.
+
+### Enhancements
+1. **Real-Time Queue & Discovered Counters**:
+   - `server/crawler.js`: Tracks `visited.size + toVisit.length` as `totalDiscovered`, along with `queued` (`toVisit.length`) and `crawledCount`.
+   - Replaced initial misleading `0 / 0 pages` with an active `Scanning Sitemaps...` state that transitions into `{current} / {total} pages` as URLs are queued from XML sitemaps or link extraction.
+2. **Comprehensive Crawl Summary Card**:
+   - When a crawl finishes, instead of merely showing a flat count, the UI displays a dual-metric summary card:
+     - **Pages in Crawl**: Total discovered in sitemaps and site links (`totalDiscovered`).
+     - **Actually Crawled**: Pages visited and parsed (`crawledCount`).
+     - **Coverage Status**: Displays `100% Crawled` if all discovered pages were fetched, or `Limit Capped (N max)` if the crawl stopped due to the `maxPages` limit.
+     - **Contextual Notice**: If discovered pages were left in queue uncrawled, a helpful warning explains: `⚠️ {queuedCount} discovered pages were left uncrawled because the crawl reached your limit of {maxPages} pages.`
+3. **Components Updated**:
+   - `server/crawler.js`: Returns `{ results, summary }` with `totalDiscovered`, `crawledCount`, `queuedCount`, `maxPagesReached`, and `maxPages`.
+   - `server/index.js`: Dispatches the structured `summary` object in the SSE `done` event.
+   - `src/components/UploadZone.tsx` & `src/components/DataSourcesModal.tsx`: Render the real-time queue badge and dual-metric completion card for both Source (Old Site) and Target (New Site) crawls.
+
+
+

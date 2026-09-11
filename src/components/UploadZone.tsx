@@ -281,17 +281,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   // --- DRAFT STATE & BACKGROUND RECOVERY ---
   useEffect(() => {
     // Restore draft on mount
-    const saved = localStorage.getItem('uploadZone_draft');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('uploadZone_draft');
+      if (saved) {
         const parsed = JSON.parse(saved);
         setSourceUrl(parsed.sourceUrl || '');
         setTargetUrl(parsed.targetUrl || '');
         setCrawlConfig(parsed.crawlConfig || crawlConfig);
         setInputMode(parsed.inputMode || 'csv');
         setUploadProjectName(parsed.uploadProjectName || 'Untitled Project');
-        if (parsed.sourceEntries) setSourceEntries(parsed.sourceEntries);
-        if (parsed.targetEntries) setTargetEntries(parsed.targetEntries);
         
         // Reconnect to active jobs
         if (parsed.crawlProgress) {
@@ -303,9 +301,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             connectToCrawlJob(parsed.crawlProgress.target.jobId, 'target', parsed.targetUrl);
           }
         }
-      } catch (e) {
-        console.error('Failed to parse draft state', e);
       }
+    } catch (e) {
+      console.error('Failed to parse draft state', e);
+      try {
+        localStorage.removeItem('uploadZone_draft');
+      } catch {}
     }
     setDraftRestored(true);
   }, []);
@@ -314,18 +315,25 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
     // Auto-save draft on changes (only after initial restore)
     if (!draftRestored) return;
     
+    // Only store lightweight metadata. Never store large crawl entries in localStorage (5MB limit)!
     const draft = {
       sourceUrl,
       targetUrl,
       crawlConfig,
       inputMode,
-      sourceEntries,
-      targetEntries,
       crawlProgress,
       uploadProjectName,
     };
-    localStorage.setItem('uploadZone_draft', JSON.stringify(draft));
-  }, [sourceUrl, targetUrl, crawlConfig, inputMode, sourceEntries, targetEntries, crawlProgress, draftRestored, uploadProjectName]);
+    try {
+      localStorage.setItem('uploadZone_draft', JSON.stringify(draft));
+    } catch (e) {
+      console.warn('Could not save draft to localStorage (quota or restricted):', e);
+      // If quota exceeded, clean up old bloated draft to free storage
+      try {
+        localStorage.removeItem('uploadZone_draft');
+      } catch {}
+    }
+  }, [sourceUrl, targetUrl, crawlConfig, inputMode, crawlProgress, draftRestored, uploadProjectName]);
 
   const connectToCrawlJob = (jobId: string, type: 'source' | 'target', url: string) => {
     setIsProcessing(true);
@@ -341,14 +349,46 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       const data = JSON.parse(event.data);
       
       if (data.type === 'start') {
-        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'starting', current: 0, total: 0 }}));
+        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'starting', current: 0, total: 0, discovered: 0, queued: 0 }}));
       } else if (data.type === 'progress') {
-        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'crawling', current: data.current, total: data.total, message: data.message }}));
+        setCrawlProgress(prev => ({
+          ...prev, 
+          [type]: { 
+            jobId, 
+            status: 'crawling', 
+            current: data.current, 
+            total: data.total || data.discovered || 0,
+            discovered: data.discovered || data.total || 0,
+            queued: data.queued !== undefined ? data.queued : Math.max(0, (data.total || 0) - data.current),
+            maxPages: data.maxPages,
+            message: data.message 
+          }
+        }));
       } else if (data.type === 'done') {
         eventSource.close();
-        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'done', current: data.results.length, total: data.results.length }}));
-        if (type === 'source') setSourceEntries(data.results);
-        else setTargetEntries(data.results);
+        const entries = data.results || [];
+        const summary = data.summary || {
+          totalDiscovered: entries.length,
+          crawledCount: entries.length,
+          queuedCount: 0,
+          maxPagesReached: false,
+          maxPages: crawlConfig.maxPages
+        };
+        setCrawlProgress(prev => ({
+          ...prev, 
+          [type]: { 
+            jobId, 
+            status: 'done', 
+            current: summary.crawledCount, 
+            total: summary.totalDiscovered,
+            discovered: summary.totalDiscovered,
+            queued: summary.queuedCount,
+            summary,
+            message: 'Crawl completed' 
+          }
+        }));
+        if (type === 'source') setSourceEntries(entries);
+        else setTargetEntries(entries);
         setIsProcessing(false);
       } else if (data.type === 'paused') {
         eventSource.close();
@@ -725,23 +765,103 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             )}
 
             {crawlProgress.source && crawlProgress.source.status !== 'done' && (
-              <div className="mt-4 p-3 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="flex justify-between text-xs text-slate-400 mb-2">
-                  <span>Crawling...</span>
-                  <span>{crawlProgress.source.current} / {crawlProgress.source.total} pages</span>
+              <div className="mt-4 p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-200 flex items-center space-x-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
+                    </span>
+                    <span>{crawlProgress.source.status === 'starting' ? 'Scanning Sitemaps...' : 'Crawling Pages...'}</span>
+                  </span>
+                  <span className="font-mono text-slate-300 font-medium">
+                    {crawlProgress.source.total > 0 ? (
+                      <>
+                        <span className="text-brand-400 font-bold">{crawlProgress.source.current}</span>
+                        <span className="text-slate-500"> / </span>
+                        <span>{crawlProgress.source.total}</span>
+                        <span className="text-slate-400 text-[11px] ml-1">pages</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-500 text-[11px] italic">Discovering URLs...</span>
+                    )}
+                  </span>
                 </div>
-                <div className="w-full bg-slate-800 rounded-full h-1.5">
-                  <div className="bg-brand-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (crawlProgress.source.current / Math.max(1, crawlProgress.source.total)) * 100)}%` }}></div>
+                
+                <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-r from-brand-500 to-brand-400 h-2 rounded-full transition-all duration-300" 
+                    style={{ 
+                      width: crawlProgress.source.total > 0 
+                        ? `${Math.min(100, Math.max(3, (crawlProgress.source.current / crawlProgress.source.total) * 100))}%` 
+                        : '15%' 
+                    }}
+                  ></div>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-2 truncate">{crawlProgress.source.message}</div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                  <span className="truncate max-w-[210px] text-slate-400" title={crawlProgress.source.message}>
+                    {crawlProgress.source.message || 'Processing queue...'}
+                  </span>
+                  {crawlProgress.source.queued !== undefined && crawlProgress.source.queued > 0 && (
+                    <span className="shrink-0 text-slate-400 font-mono text-[10px] bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700/50">
+                      {crawlProgress.source.queued} in queue
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             
             {sourceEntries && (
-               <div className="mt-4 p-3 rounded-lg bg-brand-500/10 border border-brand-500/30 flex items-center justify-between">
-                 <span className="text-xs font-bold text-brand-400">{sourceEntries.length} URLs Crawled</span>
-                 <CheckCircle2 className="h-4 w-4 text-brand-400" />
-               </div>
+              <div className="mt-4 p-3.5 rounded-xl bg-slate-950/90 border border-brand-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-brand-400 shrink-0" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Crawl Summary</span>
+                  </div>
+                  {crawlProgress.source?.summary?.queuedCount > 0 ? (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      Limit Capped ({crawlConfig.maxPages} max)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/30">
+                      100% Crawled
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
+                    <div className="flex items-baseline space-x-1 mt-0.5">
+                      <span className="text-base font-bold text-slate-200 font-mono">
+                        {crawlProgress.source?.summary?.totalDiscovered ?? crawlProgress.source?.total ?? sourceEntries.length}
+                      </span>
+                      <span className="text-[10px] text-slate-500">found</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-brand-500/20">
+                    <span className="block text-[10px] text-brand-400 font-medium">Actually Crawled</span>
+                    <div className="flex items-baseline space-x-1 mt-0.5">
+                      <span className="text-base font-bold text-brand-400 font-mono">
+                        {sourceEntries.length}
+                      </span>
+                      <span className="text-[10px] text-slate-400">pages</span>
+                    </div>
+                  </div>
+                </div>
+
+                {crawlProgress.source?.summary?.queuedCount > 0 ? (
+                  <p className="text-[11px] text-amber-400/90 leading-tight bg-amber-500/5 p-2 rounded border border-amber-500/20">
+                    ⚠️ <strong>{crawlProgress.source.summary.queuedCount} discovered pages</strong> were left uncrawled because the crawl reached your limit of {crawlConfig.maxPages} pages.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 leading-tight">
+                    ✓ All {sourceEntries.length} discovered pages were successfully crawled and parsed.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -809,23 +929,103 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
             )}
 
             {crawlProgress.target && crawlProgress.target.status !== 'done' && (
-              <div className="mt-4 p-3 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="flex justify-between text-xs text-slate-400 mb-2">
-                  <span>Crawling...</span>
-                  <span>{crawlProgress.target.current} / {crawlProgress.target.total} pages</span>
+              <div className="mt-4 p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-200 flex items-center space-x-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>{crawlProgress.target.status === 'starting' ? 'Scanning Sitemaps...' : 'Crawling Pages...'}</span>
+                  </span>
+                  <span className="font-mono text-slate-300 font-medium">
+                    {crawlProgress.target.total > 0 ? (
+                      <>
+                        <span className="text-emerald-400 font-bold">{crawlProgress.target.current}</span>
+                        <span className="text-slate-500"> / </span>
+                        <span>{crawlProgress.target.total}</span>
+                        <span className="text-slate-400 text-[11px] ml-1">pages</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-500 text-[11px] italic">Discovering URLs...</span>
+                    )}
+                  </span>
                 </div>
-                <div className="w-full bg-slate-800 rounded-full h-1.5">
-                  <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (crawlProgress.target.current / Math.max(1, crawlProgress.target.total)) * 100)}%` }}></div>
+                
+                <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-2 rounded-full transition-all duration-300" 
+                    style={{ 
+                      width: crawlProgress.target.total > 0 
+                        ? `${Math.min(100, Math.max(3, (crawlProgress.target.current / crawlProgress.target.total) * 100))}%` 
+                        : '15%' 
+                    }}
+                  ></div>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-2 truncate">{crawlProgress.target.message}</div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                  <span className="truncate max-w-[210px] text-slate-400" title={crawlProgress.target.message}>
+                    {crawlProgress.target.message || 'Processing queue...'}
+                  </span>
+                  {crawlProgress.target.queued !== undefined && crawlProgress.target.queued > 0 && (
+                    <span className="shrink-0 text-slate-400 font-mono text-[10px] bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700/50">
+                      {crawlProgress.target.queued} in queue
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             
             {targetEntries && (
-               <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-                 <span className="text-xs font-bold text-emerald-400">{targetEntries.length} URLs Crawled</span>
-                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-               </div>
+              <div className="mt-4 p-3.5 rounded-xl bg-slate-950/90 border border-emerald-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Crawl Summary</span>
+                  </div>
+                  {crawlProgress.target?.summary?.queuedCount > 0 ? (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      Limit Capped ({crawlConfig.maxPages} max)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      100% Crawled
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
+                    <div className="flex items-baseline space-x-1 mt-0.5">
+                      <span className="text-base font-bold text-slate-200 font-mono">
+                        {crawlProgress.target?.summary?.totalDiscovered ?? crawlProgress.target?.total ?? targetEntries.length}
+                      </span>
+                      <span className="text-[10px] text-slate-500">found</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/90 p-2 rounded-lg border border-emerald-500/20">
+                    <span className="block text-[10px] text-emerald-400 font-medium">Actually Crawled</span>
+                    <div className="flex items-baseline space-x-1 mt-0.5">
+                      <span className="text-base font-bold text-emerald-400 font-mono">
+                        {targetEntries.length}
+                      </span>
+                      <span className="text-[10px] text-slate-400">pages</span>
+                    </div>
+                  </div>
+                </div>
+
+                {crawlProgress.target?.summary?.queuedCount > 0 ? (
+                  <p className="text-[11px] text-amber-400/90 leading-tight bg-amber-500/5 p-2 rounded border border-amber-500/20">
+                    ⚠️ <strong>{crawlProgress.target.summary.queuedCount} discovered pages</strong> were left uncrawled because the crawl reached your limit of {crawlConfig.maxPages} pages.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 leading-tight">
+                    ✓ All {targetEntries.length} discovered pages were successfully crawled and parsed.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>

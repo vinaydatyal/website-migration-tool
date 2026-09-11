@@ -57,7 +57,17 @@ async function runCrawlJob(jobId, url, config, initialState = null) {
         job.savedState = results.state;
         job.events.push({ type: 'paused', message: 'Crawl is paused.' });
       } else {
-        activeJobs.get(jobId).events.push({ type: 'done', results });
+        const entries = Array.isArray(results) ? results : (results?.results || []);
+        const summary = results?.summary || {
+          totalDiscovered: entries.length,
+          crawledCount: entries.length,
+          queuedCount: 0,
+          maxPagesReached: false,
+          maxPages: config?.maxPages || 500,
+          successCount: entries.filter(r => r.statusCode && r.statusCode < 400).length,
+          errorCount: entries.filter(r => !r.statusCode || r.statusCode >= 400).length
+        };
+        activeJobs.get(jobId).events.push({ type: 'done', results: entries, summary });
       }
     }
   } catch (error) {

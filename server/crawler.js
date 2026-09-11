@@ -124,7 +124,15 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
 
   // Sitemap Discovery (only on fresh start)
   if (!initialState && !getIsStopped?.() && !getIsPaused?.()) {
-    onProgress({ type: 'progress', message: `Discovering sitemaps for ${domain}...`, current: 0, total: 0 });
+    onProgress({ 
+      type: 'progress', 
+      message: `Discovering sitemaps for ${domain}...`, 
+      current: 0, 
+      total: toVisit.length,
+      discovered: toVisit.length,
+      queued: toVisit.length,
+      maxPages
+    });
     try {
       const parsedUrl = new URL(startUrl);
       const origin = `${parsedUrl.protocol}//${parsedUrl.host}`;
@@ -186,7 +194,15 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
          }
       }
       if (addedFromSitemap.size > 0) {
-         onProgress({ type: 'progress', message: `Found ${addedFromSitemap.size} URLs via Sitemap!`, current: 0, total: addedFromSitemap.size });
+         onProgress({ 
+           type: 'progress', 
+           message: `Discovered ${addedFromSitemap.size} pages via sitemap!`, 
+           current: 0, 
+           total: toVisit.length,
+           discovered: toVisit.length,
+           queued: toVisit.length,
+           maxPages
+         });
       }
     } catch(err) {
        console.error('Sitemap discovery error:', err);
@@ -247,11 +263,15 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
       visited.add(normalized);
       crawledCount++;
 
+      const currentDiscovered = visited.size + toVisit.length;
       onProgress({ 
         type: 'progress', 
         message: `Crawling ${normalized}`, 
         current: crawledCount, 
-        total: visited.size + toVisit.length 
+        total: currentDiscovered,
+        discovered: currentDiscovered,
+        queued: toVisit.length,
+        maxPages
       });
 
       // 8. Fire off another worker to hit max concurrency if queue allows
@@ -363,8 +383,20 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
     }
   });
 
+  const totalDiscovered = visited.size + toVisit.length;
+  const queuedCount = toVisit.length;
+  const maxPagesReached = crawledCount >= maxPages;
+
   if (isPausedState) {
-    onProgress({ type: 'progress', message: 'Crawl paused by user', current: crawledCount, total: visited.size });
+    onProgress({ 
+      type: 'progress', 
+      message: 'Crawl paused by user', 
+      current: crawledCount, 
+      total: totalDiscovered,
+      discovered: totalDiscovered,
+      queued: queuedCount,
+      maxPages
+    });
     await browser.close();
     return { 
       isPaused: true, 
@@ -373,9 +405,28 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   }
 
   if (getIsStopped && getIsStopped()) {
-    onProgress({ type: 'progress', message: 'Crawl stopped by user', current: crawledCount, total: visited.size });
+    onProgress({ 
+      type: 'progress', 
+      message: 'Crawl stopped by user', 
+      current: crawledCount, 
+      total: totalDiscovered,
+      discovered: totalDiscovered,
+      queued: queuedCount,
+      maxPages
+    });
   }
 
   await browser.close();
-  return results;
+  return {
+    results,
+    summary: {
+      totalDiscovered,
+      crawledCount,
+      queuedCount,
+      maxPagesReached,
+      maxPages,
+      successCount: results.filter(r => r.statusCode && r.statusCode < 400).length,
+      errorCount: results.filter(r => !r.statusCode || r.statusCode >= 400).length
+    }
+  };
 }

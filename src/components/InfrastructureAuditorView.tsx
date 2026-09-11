@@ -44,9 +44,9 @@ export const InfrastructureAuditorView: React.FC<Props> = ({ projectMetadata }) 
     
     try {
       const [dnsSslRes, robotsRes, sitemapRes] = await Promise.all([
-        fetch(`http://localhost:3001/api/check-dns-ssl?domain=${encodeURIComponent(cleanDomain)}`),
-        fetch(`http://localhost:3001/api/check-robots?domain=${encodeURIComponent(cleanDomain)}`),
-        fetch(`http://localhost:3001/api/check-sitemap?domain=${encodeURIComponent(cleanDomain)}`)
+        fetch(`/api/check-dns-ssl?domain=${encodeURIComponent(cleanDomain)}`),
+        fetch(`/api/check-robots?domain=${encodeURIComponent(cleanDomain)}`),
+        fetch(`/api/check-sitemap?domain=${encodeURIComponent(cleanDomain)}`)
       ]);
 
       if (!dnsSslRes.ok) throw new Error('Failed to fetch DNS/SSL data');

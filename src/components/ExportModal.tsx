@@ -76,7 +76,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const criticalIssues = mappings
           .flatMap(m => m.discrepancies.map(d => ({...d, sourceUrl: m.source.url, targetUrl: m.target?.url})))
           .filter(d => d.severity === 'CRITICAL' || d.severity === 'HIGH');
-        const res = await fetch('http://localhost:3001/api/generate-pdf', {
+        const res = await fetch('/api/generate-pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ stats, projectMetadata, criticalIssues })
