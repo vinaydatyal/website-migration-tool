@@ -10,11 +10,120 @@ function normalizeUrl(url) {
   }
 }
 
+function extractMetadataFromHtml(html) {
+  if (!html || typeof html !== 'string') {
+    return { title: '', metaDescription: '', h1: '', h2: '', wordCount: 0, links: [] };
+  }
+
+  // Title extraction
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+  // Meta description extraction (handles both name then content, and content then name)
+  let metaDescription = '';
+  const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i) ||
+                        html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i);
+  if (metaDescMatch) {
+    metaDescription = metaDescMatch[1].trim();
+  }
+
+  // H1 and H2 tags
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const h1 = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+
+  const h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+  const h2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, '').trim() : '';
+
+  // Word count (strip script, style, html tags)
+  const textOnly = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const wordCount = textOnly ? textOnly.split(/\s+/).filter(Boolean).length : 0;
+
+  // Hyperlinks
+  const links = [];
+  const linkRegex = /<a[^>]*href=["'](https?:\/\/[^"']+)["']/gi;
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) {
+    links.push(match[1]);
+  }
+
+  return { title, metaDescription, h1, h2, wordCount, links };
+}
+
+async function safeExtractMetadata(workerPage, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (workerPage.isClosed()) break;
+
+      const data = await workerPage.evaluate(() => {
+        const title = document.title || '';
+        const metaDescEl = document.querySelector('meta[name="description"]');
+        const metaDescription = metaDescEl ? metaDescEl.getAttribute('content') || '' : '';
+        const h1El = document.querySelector('h1');
+        const h1 = h1El ? h1El.innerText.trim() : '';
+        const h2El = document.querySelector('h2');
+        const h2 = h2El ? h2El.innerText.trim() : '';
+        const wordCount = document.body ? (document.body.innerText || '').split(/\s+/).filter(Boolean).length : 0;
+        
+        const links = Array.from(document.querySelectorAll('a[href]'))
+          .map(a => a.href)
+          .filter(href => href && href.startsWith('http'));
+          
+        return { title, metaDescription, h1, h2, wordCount, links };
+      });
+      return data;
+    } catch (evalErr) {
+      const msg = (evalErr.message || '').toLowerCase();
+      const isNavError = msg.includes('execution context was destroyed') ||
+                         msg.includes('context') ||
+                         msg.includes('navigation') ||
+                         msg.includes('target closed');
+
+      if (isNavError && attempt < maxRetries && !workerPage.isClosed()) {
+        // Page was navigating while evaluating. Give the new page context a moment to settle and retry.
+        await workerPage.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
+
+      // If evaluate still fails, use workerPage.content() as resilient fallback
+      try {
+        if (!workerPage.isClosed()) {
+          const html = await workerPage.content();
+          if (html && html.length > 50) {
+            return extractMetadataFromHtml(html);
+          }
+        }
+      } catch (contentErr) {
+        // Content fallback failed
+      }
+
+      if (attempt >= maxRetries) {
+        break;
+      }
+    }
+  }
+
+  return { title: '', metaDescription: '', h1: '', h2: '', wordCount: 0, links: [] };
+}
+
 export async function crawlSite(startUrl, config, onProgress, getIsStopped, getIsPaused, initialState = null) {
   const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu'
+    ]
   });
   
   const page = await browser.newPage();
@@ -282,6 +391,17 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
       try {
         workerPage = await browser.newPage();
         
+        // Set desktop User-Agent and realistic headers to prevent anti-bot redirect loops
+        await workerPage.setUserAgent(
+          config?.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        );
+        await workerPage.setExtraHTTPHeaders({
+          'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"'
+        });
+
         // Speed hack: Block heavy non-HTML resources
         await workerPage.setRequestInterception(true);
         workerPage.on('request', (req) => {
@@ -297,50 +417,52 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           }
         });
 
-        // Wait for 'networkidle2' to allow React/Vue apps to fetch data and render DOM
+        // Navigate with domcontentloaded to handle fast initial paint without getting destroyed by early redirects
         let response = null;
         try {
-          response = await workerPage.goto(normalized, { waitUntil: 'networkidle2', timeout: 30000 });
+          response = await workerPage.goto(normalized, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (navError) {
-          // If networkidle2 times out (e.g. due to long-polling APIs), don't throw. 
-          // The DOM is likely already rendered, so we just catch the timeout.
-          if (!navError.message.toLowerCase().includes('timeout')) {
-            throw navError;
+          const msg = (navError.message || '').toLowerCase();
+          if (msg.includes('execution context was destroyed') || msg.includes('navigation') || msg.includes('net::err_aborted')) {
+            // A redirect occurred during initial navigation. Wait for new document.
+            await workerPage.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+          } else if (!msg.includes('timeout')) {
+            console.warn(`Navigation notice for ${normalized}:`, navError.message);
           }
         }
         
-        // Give the JS engine an extra 1.5 seconds to parse and paint client-side routes
-        await workerPage.evaluate(() => new Promise(resolve => setTimeout(resolve, 1500)));
+        // Node.js delay (does not bind to browser execution context) allowing client-side hydration & redirects to trigger
+        await new Promise(resolve => setTimeout(resolve, 600));
+        await workerPage.waitForNetworkIdle({ idleTime: 500, timeout: 2500 }).catch(() => {});
+
+        // Detect if page was redirected to a different canonical or localized URL
+        let finalLandedUrl = null;
+        try {
+          if (!workerPage.isClosed()) {
+            finalLandedUrl = normalizeUrl(workerPage.url());
+          }
+        } catch (e) {}
+
+        if (finalLandedUrl && finalLandedUrl !== normalized) {
+          visited.add(finalLandedUrl);
+        }
 
         const statusCode = response ? response.status() : 200;
         
         if (statusCode >= 400) {
           results.push({
             url: normalized,
+            redirectUrl: (finalLandedUrl && finalLandedUrl !== normalized) ? finalLandedUrl : undefined,
             title: '', metaDescription: '', h1: '', h2: '',
-            statusCode, wordCount: 0, inlinks: 1
+            statusCode, wordCount: 0, inlinks: 1, outlinks: 0, outgoingLinks: []
           });
         } else {
-          // Extract DOM metadata
-          const data = await workerPage.evaluate(() => {
-            const title = document.title || '';
-            const metaDescEl = document.querySelector('meta[name="description"]');
-            const metaDescription = metaDescEl ? metaDescEl.getAttribute('content') || '' : '';
-            const h1El = document.querySelector('h1');
-            const h1 = h1El ? h1El.innerText.trim() : '';
-            const h2El = document.querySelector('h2');
-            const h2 = h2El ? h2El.innerText.trim() : '';
-            const wordCount = document.body ? document.body.innerText.split(/\s+/).length : 0;
-            
-            const links = Array.from(document.querySelectorAll('a[href]'))
-              .map(a => a.href)
-              .filter(href => href.startsWith('http'));
-              
-            return { title, metaDescription, h1, h2, wordCount, links };
-          });
+          // Extract DOM metadata using resilient safeExtractMetadata
+          const data = await safeExtractMetadata(workerPage);
           
           results.push({
             url: normalized,
+            redirectUrl: (finalLandedUrl && finalLandedUrl !== normalized) ? finalLandedUrl : undefined,
             title: data.title,
             metaDescription: data.metaDescription,
             h1: data.h1,
@@ -368,7 +490,24 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           await new Promise(r => setTimeout(r, rateLimit));
         }
       } catch (error) {
-        console.error(`Error crawling ${normalized}:`, error.message);
+        console.warn(`Non-fatal crawl note for ${normalized}:`, error.message);
+        // Ensure the URL is recorded in results so it's not silently lost
+        const existingIndex = results.findIndex(r => r.url === normalized);
+        if (existingIndex === -1) {
+          results.push({
+            url: normalized,
+            title: '',
+            metaDescription: '',
+            h1: '',
+            h2: '',
+            statusCode: 0,
+            wordCount: 0,
+            inlinks: 1,
+            outlinks: 0,
+            outgoingLinks: [],
+            error: error.message
+          });
+        }
       } finally {
         // ALWAYS clean up the page context to prevent memory leaks
         if (workerPage) await workerPage.close().catch(() => {});

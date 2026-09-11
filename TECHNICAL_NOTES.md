@@ -138,5 +138,37 @@ Previously, the crawler UI only showed a transient `0 / 0 pages` counter while d
    - `server/index.js`: Dispatches the structured `summary` object in the SSE `done` event.
    - `src/components/UploadZone.tsx` & `src/components/DataSourcesModal.tsx`: Render the real-time queue badge and dual-metric completion card for both Source (Old Site) and Target (New Site) crawls.
 
+---
+
+## 8. Crawler Resilience & "Execution Context Destroyed" Prevention
+During concurrent site crawling (e.g., e-commerce sites like `blinkesim.com` with multilingual routing, currency selectors, trailing-slash redirects, or anti-bot protections), crawls previously failed with:
+`Error crawling <URL>: Execution context was destroyed, most likely because of a navigation.`
+
+### Root Cause Analysis
+1. **In-Browser Execution Context Holding**:
+   - `workerPage.evaluate(() => new Promise(r => setTimeout(r, 1500)))` previously executed inside the page's JavaScript environment.
+   - When a site issues a trailing-slash 301/302, localized redirect (`/en/pais/` -> `/en/country/`), or client-side router transition while this evaluate call is pending, Chromium destroys the execution context of the previous document, immediately throwing an unhandled `Execution context was destroyed` error.
+2. **Race Condition in `evaluate` Metadata Extraction**:
+   - If `workerPage.evaluate()` was called right as a client-side script or meta refresh triggered navigation, the context was destroyed without retry or recovery.
+3. **Bot Challenge & Headless User-Agent Detection**:
+   - Headless Chrome's default User-Agent (`HeadlessChrome/...`) triggers anti-bot challenges and redirect loops on security-hardened portals (Cloudflare, Wordfence).
+4. **Crawl Result Drops**:
+   - Any thrown error in the crawl loop was previously logged and discarded without recording the URL into `results`, leading to discrepancies between `crawledCount` and returned datasets.
+
+### Architectural Solution & Safeguards
+1. **Zero-Lock Node.js Delays**:
+   - Replaced in-browser `evaluate(setTimeout)` with a Node.js-level sleep (`new Promise(r => setTimeout(r, 600))`) paired with `workerPage.waitForNetworkIdle({ idleTime: 500, timeout: 2500 })`. This gives asynchronous SPAs time to hydrate without tying execution to the browser's transient V8 context.
+2. **Self-Healing `safeExtractMetadata`**:
+   - Wrapped DOM evaluation in a 3-tier retry loop. If `Execution context was destroyed` or `navigation` is caught, it waits for `waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 })` and re-evaluates the fresh document.
+3. **CDP-Level HTML Parsing Fallback (`extractMetadataFromHtml`)**:
+   - If in-page JS evaluation fails repeatedly, the crawler calls `workerPage.content()` to pull the raw HTML snapshot over Chrome DevTools Protocol (CDP) and parses `<title>`, `<meta name="description">`, `<h1>`, `<h2>`, word count, and internal links using regex/string parsing without running code in the browser context.
+4. **Desktop User-Agent & Navigation Headers**:
+   - Configured modern Chrome desktop User-Agent (`Chrome/122.0.0.0`) and standard client headers (`Accept-Language`, `Sec-Ch-Ua`, platform headers) on every worker page, preventing anti-bot redirect loops.
+5. **Redirect Tracking & Visited Deduplication**:
+   - Normalizes and compares `workerPage.url()` with the requested URL. Redirect targets are added to `visited` to prevent duplicate crawls, and `redirectUrl` is stored in results.
+6. **Guaranteed URL Retention**:
+   - The outer `catch (error)` block ensures any page encountering an issue is still registered in `results` with its status code or error metadata, preventing dropped pages.
+
+
 
 
