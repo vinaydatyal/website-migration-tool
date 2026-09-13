@@ -439,7 +439,6 @@ export function App() {
   };
 
   const handleForceSave = async () => {
-    if (!sourceEntries && !targetEntries) return;
     setIsProcessing(true);
     try {
       await saveProjectToIndexedDB({
