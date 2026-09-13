@@ -33,6 +33,7 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [draftState, setDraftState] = useState<any>(null);
 
   const fetchProjects = async () => {
     setIsLoading(true);
@@ -44,6 +45,14 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       fetchProjects();
+      try {
+        const draftStr = localStorage.getItem('uploadZone_draft');
+        if (draftStr) {
+          setDraftState(JSON.parse(draftStr));
+        }
+      } catch (e) {}
+    } else {
+      setDraftState(null);
     }
   }, [isOpen]);
 
@@ -135,6 +144,19 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
             projects.map((p) => {
               const isActive = p.id === currentProjectId;
               const isEditing = editingId === p.id;
+              
+              let runningJobText = null;
+              if (draftState && draftState.uploadProjectName === p.name) {
+                const srcProgress = draftState.crawlProgress?.source;
+                const tgtProgress = draftState.crawlProgress?.target;
+                if (srcProgress?.status === 'crawling') {
+                  runningJobText = `Crawling Source: ${srcProgress.current}/${srcProgress.total}`;
+                } else if (tgtProgress?.status === 'crawling') {
+                  runningJobText = `Crawling Target: ${tgtProgress.current}/${tgtProgress.total}`;
+                } else if (srcProgress?.status === 'starting' || tgtProgress?.status === 'starting') {
+                  runningJobText = 'Starting Crawl...';
+                }
+              }
 
               return (
                 <div 
@@ -179,6 +201,12 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                           {isActive && (
                             <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-brand-500 text-slate-950">
                               Active
+                            </span>
+                          )}
+                          {runningJobText && (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center space-x-1">
+                              <span className="animate-pulse h-1.5 w-1.5 bg-amber-400 rounded-full inline-block mr-1"></span>
+                              {runningJobText}
                             </span>
                           )}
                           <button 

@@ -34,7 +34,7 @@ export async function saveProjectToIndexedDB(project: MigrationProject): Promise
       .then(({ error }) => {
         if (error) console.warn('Supabase sync notice:', error.message);
       })
-      .catch((e) => console.warn('Supabase connection notice:', e));
+      .then(undefined, (e) => console.warn('Supabase connection notice:', e));
   } catch (error) {
     console.error('Failed to save project to IndexedDB:', error);
   }
@@ -55,7 +55,7 @@ export async function loadProjectFromIndexedDB(id: string): Promise<MigrationPro
 
     if (!error && data?.project_data) {
       const proj = data.project_data as MigrationProject;
-      await projectStore.setItem(id, proj).catch(() => {});
+      await projectStore.setItem(id, proj).then(undefined, () => {});
       return proj;
     }
     return null;
@@ -90,7 +90,7 @@ export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]>
             const existing = localMap.get(remoteP.id);
             if (!existing) {
               localProjects.push(remoteP);
-              projectStore.setItem(remoteP.id, remoteP).catch(() => {});
+              projectStore.setItem(remoteP.id, remoteP).then(undefined, () => {});
             } else {
               const remoteTime = new Date(remoteP.updatedAt || 0).getTime();
               const localTime = new Date(existing.updatedAt || 0).getTime();
@@ -99,7 +99,7 @@ export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]>
               const localCount = (existing.sourceEntries?.length || 0) + (existing.targetEntries?.length || 0);
               if (remoteCount > localCount || (remoteCount === localCount && remoteTime > localTime)) {
                 Object.assign(existing, remoteP);
-                projectStore.setItem(remoteP.id, remoteP).catch(() => {});
+                projectStore.setItem(remoteP.id, remoteP).then(undefined, () => {});
               }
             }
           }
@@ -124,8 +124,8 @@ export async function deleteProjectFromIndexedDB(id: string): Promise<void> {
     await projectStore.removeItem(id);
     
     // 2. Delete from Supabase
-    supabase.from('projectSnapshots').delete().eq('project_id', id).catch(() => {});
-    supabase.from('migrationProjects').delete().eq('id', id).catch(() => {});
+    supabase.from('projectSnapshots').delete().eq('project_id', id).then(undefined, () => {});
+    supabase.from('migrationProjects').delete().eq('id', id).then(undefined, () => {});
   } catch (error) {
     console.error('Failed to delete project:', error);
   }
@@ -148,7 +148,7 @@ export async function saveSnapshot(projectId: string, snapshot: MigrationSnapsho
         snapshot_data: snapshot,
         created_at: snapshot.timestamp
       })
-      .catch(() => {});
+      .then(undefined, () => {});
   } catch (error) {
     console.error('Failed to save snapshot:', error);
   }
@@ -176,7 +176,7 @@ export async function getSnapshots(projectId: string): Promise<MigrationSnapshot
           const snap = row.snapshot_data as MigrationSnapshot;
           if (snap && snap.id && !localMap.has(snap.id)) {
             localSnapshots.push(snap);
-            snapshotStore.setItem(snap.id, { ...snap, projectId }).catch(() => {});
+            snapshotStore.setItem(snap.id, { ...snap, projectId }).then(undefined, () => {});
           }
         }
       }
@@ -194,7 +194,7 @@ export async function getSnapshots(projectId: string): Promise<MigrationSnapshot
 export async function deleteSnapshot(id: string): Promise<void> {
   try {
     await snapshotStore.removeItem(id);
-    supabase.from('projectSnapshots').delete().eq('id', id).catch(() => {});
+    supabase.from('projectSnapshots').delete().eq('id', id).then(undefined, () => {});
   } catch (error) {
     console.error('Failed to delete snapshot:', error);
   }

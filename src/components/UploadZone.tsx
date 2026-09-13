@@ -1401,9 +1401,9 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             type="button"
-            onClick={() => setProfile('STANDARD')}
+            onClick={() => setProfile('UNKNOWN')}
             className={`px-4 py-3 text-left rounded-xl border text-sm transition-all ${
-              profile === 'STANDARD' 
+              profile === 'UNKNOWN' 
                 ? 'bg-brand-100 border-brand-500 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' 
                 : 'bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
