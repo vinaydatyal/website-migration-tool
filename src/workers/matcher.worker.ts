@@ -254,7 +254,8 @@ self.onmessage = async (e: MessageEvent) => {
             let bestSemanticScore = 0;
             let semanticTarget: CrawlEntry | null = null;
 
-            for (const candidate of targetEntries) {
+            const candidates = index.getCandidates(matchSource);
+            for (const candidate of candidates) {
               const candTfIdf = targetTfIdfCache.get(candidate.id);
               if (candTfIdf) {
                 const sim = cosineSimilarity(srcTfIdf, candTfIdf);
@@ -330,6 +331,9 @@ self.onmessage = async (e: MessageEvent) => {
       // Post progress back to main thread
       const progress = Math.min(100, Math.round(((i + CHUNK_SIZE) / sourceEntries.length) * 100));
       self.postMessage({ type: 'PROGRESS', payload: progress });
+      
+      // Yield to the event loop so progress messages dispatch and GC can breathe
+      await new Promise(r => setTimeout(r, 0));
     }
 
       // Done
