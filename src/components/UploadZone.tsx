@@ -28,9 +28,10 @@ interface UploadZoneProps {
     projectName?: string
   ) => void | Promise<void>;
   onLoadSample: () => void;
+  onSyncDraftData?: (src: CrawlEntry[], tgt: CrawlEntry[]) => void;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSample }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSample, onSyncDraftData }) => {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
@@ -69,6 +70,13 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
     exclusions: '',
     rateLimit: 0,
   });
+
+  useEffect(() => {
+    if (onSyncDraftData && (sourceEntries || targetEntries)) {
+      onSyncDraftData(sourceEntries || [], targetEntries || []);
+    }
+  }, [sourceEntries, targetEntries, onSyncDraftData]);
+
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
   const analyticsInputRef = useRef<HTMLInputElement>(null);

@@ -782,6 +782,10 @@ export function App() {
           <UploadZone 
             onDataParsed={handleDataParsed}
             onLoadSample={handleLoadSample}
+            onSyncDraftData={(src, tgt) => {
+              setSourceEntries(src);
+              setTargetEntries(tgt);
+            }}
           />
         ) : (
           <div className="space-y-6">
