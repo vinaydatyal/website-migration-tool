@@ -438,6 +438,38 @@ export function App() {
     toast.success('Redo successful');
   };
 
+  const handleForceSave = async () => {
+    if (!sourceEntries && !targetEntries) return;
+    setIsProcessing(true);
+    try {
+      await saveProjectToIndexedDB({
+        id: projectId,
+        name: projectName,
+        profile: projectProfile,
+        sourceFileName: '',
+        targetFileName: '',
+        sourceDomain: '',
+        targetDomain: '',
+        sourceEntries: sourceEntries || [],
+        targetEntries: targetEntries || [],
+        mappings: mappings,
+        patterns: patterns,
+        stats: stats,
+        checklistProgress,
+        metadata: projectMetadata,
+        resolvedDiscrepancies,
+        confidenceThreshold,
+        createdAt: projectCreatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      toast.success('Project data forcefully saved!');
+    } catch (err: any) {
+      toast.error(`Save failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleUpdateMapping = (mappingId: string, updates: Partial<UrlMapping>) => {
     pushToHistory();
     const updated = mappings.map(m => {
@@ -715,6 +747,7 @@ export function App() {
         projectName={projectName}
         setProjectName={setProjectName}
         onSaveVersion={() => takeSnapshot('Manual Snapshot', mappings, stats!)}
+        onForceSave={handleForceSave}
       />
 
       {/* Main Viewport */}

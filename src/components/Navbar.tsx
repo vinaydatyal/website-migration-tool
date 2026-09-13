@@ -36,6 +36,7 @@ interface NavbarProps {
   projectName?: string;
   setProjectName?: (name: string) => void;
   onSaveVersion?: () => void;
+  onForceSave?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -53,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   projectName = 'Untitled Project',
   setProjectName,
   onSaveVersion,
+  onForceSave,
 }) => {
   const [isEditingName, setIsEditingName] = React.useState(false);
   const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -284,6 +286,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <>
                 <div className="flex items-center space-x-1 border-r border-slate-200 dark:border-slate-800 pr-2 mr-1">
+                  {onForceSave && (
+                    <button
+                      onClick={onForceSave}
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                      title="Force save current project data"
+                    >
+                      <Database className="h-3.5 w-3.5" />
+                      <span>Save Data</span>
+                    </button>
+                  )}
                   <button
                     onClick={onSaveVersion}
                     className="p-2 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-brand-50 dark:text-slate-400 dark:hover:text-brand-400 dark:hover:bg-brand-500/10 transition-all cursor-pointer"
