@@ -123,9 +123,12 @@ export async function deleteProjectFromIndexedDB(id: string): Promise<void> {
     // 1. Delete locally
     await projectStore.removeItem(id);
     
-    // 2. Delete from Supabase
-    supabase.from('projectSnapshots').delete().eq('project_id', id).then(undefined, () => {});
-    supabase.from('migrationProjects').delete().eq('id', id).then(undefined, () => {});
+    // 2. Delete from Supabase (await to prevent race condition when fetching projects immediately after)
+    const { error: snapErr } = await supabase.from('projectSnapshots').delete().eq('project_id', id);
+    if (snapErr) console.warn('Failed to delete snapshots from Supabase:', snapErr);
+
+    const { error: projErr } = await supabase.from('migrationProjects').delete().eq('id', id);
+    if (projErr) console.warn('Failed to delete project from Supabase:', projErr);
   } catch (error) {
     console.error('Failed to delete project:', error);
   }
