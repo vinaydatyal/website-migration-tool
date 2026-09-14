@@ -23,6 +23,7 @@ import { MigrationSummaryStats, UrlMapping, DiscrepancySeverity, ParityDiscrepan
 import { MappingStatusChart } from './MappingStatusChart';
 import { ProgressChart } from './ProgressChart';
 import { GscIntegration } from './GscIntegration';
+import { SeoInsightsPanel } from './SeoInsightsPanel';
 
 interface DashboardOverviewProps {
   stats: MigrationSummaryStats;
@@ -414,6 +415,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           <MappingStatusChart mappings={mappings} />
         </div>
       </div>
+      
+      {/* AI SEO Consultant Insights */}
+      <SeoInsightsPanel mappings={mappings} />
       
     </div>
   );

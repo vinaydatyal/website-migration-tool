@@ -112,11 +112,20 @@ export function App() {
       const parts = location.pathname.split('/');
       const urlSlug = parts[1];
 
-      if (projects.length > 0 && urlSlug) {
-        const found = projects.find(p => slugify(p.name || 'Untitled Project') === urlSlug);
-        if (found) {
-          loadProjectIntoState(found, true);
-          toast.success(`Loaded project: ${found.name || 'Untitled Project'}`);
+      if (projects.length > 0) {
+        if (urlSlug) {
+          const found = projects.find(p => slugify(p.name || 'Untitled Project') === urlSlug);
+          if (found) {
+            loadProjectIntoState(found, true);
+            toast.success(`Loaded project: ${found.name || 'Untitled Project'}`);
+          }
+        } else {
+          // Auto-load most recently updated project if we're on root
+          const mostRecent = projects.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+          if (mostRecent) {
+            loadProjectIntoState(mostRecent, false);
+            toast.success(`Restored previous session: ${mostRecent.name || 'Untitled Project'}`);
+          }
         }
       }
       
@@ -129,15 +138,18 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!isRestoring && projectName) {
+    const dataLoaded = Boolean(((sourceEntries && sourceEntries.length > 0) || (targetEntries && targetEntries.length > 0)) && stats);
+    if (!isRestoring && projectName && dataLoaded) {
       const currentSlug = slugify(projectName);
       const parts = location.pathname.split('/');
-      if (parts[1] && parts[1] !== currentSlug) {
+      
+      // If we are on the root URL, or on a different slug, redirect to the current project's dashboard
+      if (!parts[1] || parts[1] !== currentSlug) {
         const view = parts[2] || 'dashboard';
         navigate(`/${currentSlug}/${view}`, { replace: true });
       }
     }
-  }, [projectName, isRestoring, navigate, location.pathname]);
+  }, [projectName, isRestoring, navigate, location.pathname, sourceEntries, targetEntries, stats]);
 
   // --- Snapshot Management ---
   const loadSnapshots = async () => {
