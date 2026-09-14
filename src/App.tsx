@@ -268,6 +268,8 @@ export function App() {
     setProcessProgress(0);
 
     try {
+      let computedMappings: UrlMapping[] = [];
+      
       // Ensure normalizedPath exists for older crawl data
       const safeSrc = (src || []).map(entry => {
         if (!entry.normalizedPath && entry.url) {
