@@ -145,6 +145,7 @@ export const DuplicateMappingsModal: React.FC<Props> = ({ targetUrl, mappings, t
                   <th className="py-3 px-4 font-semibold">Source URL</th>
                   <th className="py-3 px-4 font-semibold">Title & Meta</th>
                   <th className="py-3 px-4 font-semibold">Canonical</th>
+                  <th className="py-3 px-4 font-semibold">Target URL</th>
                   <th className="py-3 px-4 font-semibold text-right">Confidence & Action</th>
                 </tr>
               </thead>
@@ -200,7 +201,27 @@ export const DuplicateMappingsModal: React.FC<Props> = ({ targetUrl, mappings, t
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-4 align-top w-1/12 text-right">
+                      <td className="py-3 px-4 align-top w-2/12">
+                        <div className="flex flex-col space-y-1">
+                          <input
+                            type="text"
+                            defaultValue={m.targetUrl}
+                            onBlur={(e) => {
+                              if (e.target.value !== m.targetUrl) {
+                                onUpdateMapping(m.id, { 
+                                  targetUrl: e.target.value, 
+                                  strategy: 'MANUAL_OVERRIDE', 
+                                  confidenceScore: 100, 
+                                  status: 'MANUAL' 
+                                });
+                              }
+                            }}
+                            className="w-full bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded px-2 py-1.5 focus:border-brand-500 focus:outline-none placeholder:text-slate-500"
+                            placeholder="Enter target URL..."
+                          />
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 align-top w-2/12 text-right">
                         <div className={`inline-flex items-center justify-center px-2 py-1 rounded font-mono text-xs font-bold ${
                           m.confidenceScore >= 90 ? 'bg-emerald-500/20 text-emerald-400' :
                           m.confidenceScore >= 70 ? 'bg-amber-500/20 text-amber-400' :
