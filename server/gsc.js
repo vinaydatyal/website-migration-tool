@@ -57,12 +57,12 @@ export function generateAuthUrl(req, res) {
 
   const oauth2Client = getOAuthClient(req);
   const service = req.query.service || 'gsc';
-  const scopes = [];
-  if (service === 'gsc') {
-    scopes.push('https://www.googleapis.com/auth/webmasters.readonly');
-  } else if (service === 'ga4') {
-    scopes.push('https://www.googleapis.com/auth/analytics.readonly');
-  }
+  
+  // Request BOTH scopes to avoid requiring the user to authenticate twice
+  const scopes = [
+    'https://www.googleapis.com/auth/webmasters.readonly',
+    'https://www.googleapis.com/auth/analytics.readonly'
+  ];
 
   const stateObj = { service, r: crypto.randomBytes(8).toString('hex') };
   const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
@@ -99,14 +99,19 @@ export async function handleAuthCallback(req, res) {
       }
     } catch (e) {}
     
-    tokenStore.set(service, tokens);
+    tokenStore.set('gsc', tokens);
+    tokenStore.set('ga4', tokens);
     saveTokensToDisk();
+
+    // Persist token in HTTP-only cookie for 30 days to survive Railway restarts
+    res.setHeader('Set-Cookie', `gsc_tokens=${encodeURIComponent(JSON.stringify(tokens))}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`);
 
     res.send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage({ type: 'GSC_AUTH_SUCCESS', service: '${service}' }, '*');
+            window.opener.postMessage({ type: 'GSC_AUTH_SUCCESS', service: 'gsc' }, '*');
+            window.opener.postMessage({ type: 'GSC_AUTH_SUCCESS', service: 'ga4' }, '*');
             window.close();
           </script>
         </body>
@@ -118,6 +123,21 @@ export async function handleAuthCallback(req, res) {
   }
 }
 
+function getTokensFromReq(req, service) {
+  // Check cookie first (survives container restarts)
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    const match = cookieHeader.match(/gsc_tokens=([^;]+)/);
+    if (match) {
+      try {
+        return JSON.parse(decodeURIComponent(match[1]));
+      } catch (e) {}
+    }
+  }
+  // Fallback to in-memory store
+  return tokenStore.get(service);
+}
+
 export async function fetchGscData(req, res) {
   const { siteUrl, startDate, endDate, dimensions } = req.body;
 
@@ -125,7 +145,7 @@ export async function fetchGscData(req, res) {
     return res.status(400).json({ error: 'siteUrl is required' });
   }
 
-  const tokens = tokenStore.get('gsc');
+  const tokens = getTokensFromReq(req, 'gsc');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Search Console.' });
   }
@@ -172,7 +192,7 @@ export async function fetchGscData(req, res) {
 }
 
 export async function fetchGscSites(req, res) {
-  const tokens = tokenStore.get('gsc');
+  const tokens = getTokensFromReq(req, 'gsc');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Search Console.' });
   }
@@ -197,7 +217,7 @@ export async function fetchGscSites(req, res) {
 }
 
 export async function fetchGa4Properties(req, res) {
-  const tokens = tokenStore.get('ga4');
+  const tokens = getTokensFromReq(req, 'ga4');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Analytics.' });
   }
@@ -233,13 +253,13 @@ export async function fetchGa4Properties(req, res) {
 }
 
 export async function fetchGa4Data(req, res) {
-  const { propertyId, siteUrl, startDate, endDate } = req.body;
+  const { propertyId, startDate, endDate } = req.body;
 
   if (!propertyId) {
     return res.status(400).json({ error: 'propertyId is required' });
   }
 
-  const tokens = tokenStore.get('ga4');
+  const tokens = getTokensFromReq(req, 'ga4');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Analytics.' });
   }
