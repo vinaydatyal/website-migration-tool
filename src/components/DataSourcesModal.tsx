@@ -9,9 +9,19 @@ interface Props {
   onDataParsed: (entries: CrawlEntry[], type: 'source' | 'target') => void;
   sourceEntries?: CrawlEntry[];
   onMergeAnalytics?: (enrichedEntries: CrawlEntry[]) => void;
+  isGscConnected?: boolean;
+  onGscConnected?: () => void;
+  isGa4Connected?: boolean;
+  onGa4Connected?: () => void;
 }
 
-export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParsed, sourceEntries, onMergeAnalytics }) => {
+export const DataSourcesModal: React.FC<Props> = ({ 
+  isOpen, onClose, onDataParsed, sourceEntries, onMergeAnalytics,
+  isGscConnected: externalIsGscConnected,
+  onGscConnected,
+  isGa4Connected: externalIsGa4Connected,
+  onGa4Connected
+}) => {
   const [inputMode, setInputMode] = useState<'csv' | 'crawl'>('csv');
   
   // File states
@@ -60,6 +70,7 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       fetch('/api/gsc/sites').then(res => res.json()).then(data => {
         if (data.sites) {
           setGscConnected(true);
+          onGscConnected?.();
           setGscSites(data.sites);
           if (data.sites.length > 0) setSelectedGscSite(data.sites[0]);
         }
@@ -68,6 +79,7 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
       fetch('/api/ga4/properties').then(res => res.json()).then(data => {
         if (data.properties) {
           setGa4Connected(true);
+          onGa4Connected?.();
           setGa4Properties(data.properties);
           if (data.properties.length > 0) setSelectedGa4Property(data.properties[0].id);
         }
@@ -79,9 +91,11 @@ export const DataSourcesModal: React.FC<Props> = ({ isOpen, onClose, onDataParse
         const service = event.data.service;
         if (service === 'gsc') {
           setGscConnected(true);
+          onGscConnected?.();
           fetchGscSites();
         } else if (service === 'ga4') {
           setGa4Connected(true);
+          onGa4Connected?.();
           fetchGa4Properties();
         }
       }

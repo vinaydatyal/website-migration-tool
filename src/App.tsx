@@ -81,14 +81,24 @@ export function App() {
   const [projectCreatedAt, setProjectCreatedAt] = useState<string>('');
   const [checklistProgress, setChecklistProgress] = useState<Record<string, boolean>>({});
   const [isGscConnected, setIsGscConnected] = useState(false);
+  const [isGa4Connected, setIsGa4Connected] = useState(false);
 
-  // Check GSC connection status on load
+  // Check connection status on load
   useEffect(() => {
     fetch('/api/gsc/sites')
       .then(res => res.json())
       .then(data => {
         if (data.sites) {
           setIsGscConnected(true);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/ga4/properties')
+      .then(res => res.json())
+      .then(data => {
+        if (data.properties) {
+          setIsGa4Connected(true);
         }
       })
       .catch(() => {});
@@ -1007,6 +1017,8 @@ export function App() {
             setSourceEntries(enriched);
             toast.success('Analytics data successfully merged!');
           }}
+          isGa4Connected={isGa4Connected}
+          onGa4Connected={() => setIsGa4Connected(true)}
         />
       )}
 
