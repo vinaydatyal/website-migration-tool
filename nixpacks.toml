@@ -1,0 +1,9 @@
+[providers]
+  node = {}
+
+[phases.setup]
+  nixPkgs = ['...', 'chromium', 'nss', 'freetype', 'harfbuzz', 'ttf-ubuntu-font-family']
+
+[variables]
+  PUPPETEER_EXECUTABLE_PATH = '/usr/bin/chromium'
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true'
