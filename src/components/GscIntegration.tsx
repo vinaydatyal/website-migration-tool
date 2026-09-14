@@ -34,6 +34,13 @@ export const GscIntegration: React.FC<GscIntegrationProps> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, [onConnected]);
 
+  // Fetch sites if connected but sites aren't loaded yet
+  useEffect(() => {
+    if (isConnected && sites.length === 0 && !isFetchingSites) {
+      fetchSites();
+    }
+  }, [isConnected]);
+
   const handleConnect = async () => {
     try {
       setIsAuthenticating(true);

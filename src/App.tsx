@@ -81,6 +81,18 @@ export function App() {
   const [projectCreatedAt, setProjectCreatedAt] = useState<string>('');
   const [checklistProgress, setChecklistProgress] = useState<Record<string, boolean>>({});
   const [isGscConnected, setIsGscConnected] = useState(false);
+
+  // Check GSC connection status on load
+  useEffect(() => {
+    fetch('/api/gsc/sites')
+      .then(res => res.json())
+      .then(data => {
+        if (data.sites) {
+          setIsGscConnected(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata>({});
   const [resolvedDiscrepancies, setResolvedDiscrepancies] = useState<Record<string, boolean>>({});
 
