@@ -29,9 +29,11 @@ interface UploadZoneProps {
   ) => void | Promise<void>;
   onLoadSample: () => void;
   onSyncDraftData?: (src: CrawlEntry[], tgt: CrawlEntry[]) => void;
+  projectName?: string;
+  setProjectName?: (name: string) => void;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSample, onSyncDraftData }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSample, onSyncDraftData, projectName = 'Untitled Project', setProjectName }) => {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
@@ -57,7 +59,6 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   const [crawlProgress, setCrawlProgress] = useState<{source?: any, target?: any}>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
-  const [uploadProjectName, setUploadProjectName] = useState('Untitled Project');
   const [crawlConfig, setCrawlConfig] = useState({
     authType: 'NONE' as 'NONE' | 'BASIC_AUTH' | 'COOKIE' | 'FORM_AUTH',
     loginUrl: '',
@@ -306,7 +307,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           inputMode === 'csv' ? (sourceFile?.name || 'source.csv') : (sourceUrl || 'source_crawl'), 
           inputMode === 'csv' ? (targetFile?.name || 'target.csv') : (targetUrl || 'target_crawl'),
           profile,
-          uploadProjectName
+          projectName
         );
       } catch (err: any) {
         toast.error(err.message || 'Failed to run the migration analysis');
@@ -327,7 +328,9 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         setTargetUrl(parsed.targetUrl || '');
         setCrawlConfig(parsed.crawlConfig || crawlConfig);
         setInputMode(parsed.inputMode || 'csv');
-        setUploadProjectName(parsed.uploadProjectName || 'Untitled Project');
+        if (parsed.uploadProjectName && setProjectName) {
+          setProjectName(parsed.uploadProjectName);
+        }
         
         // Reconnect to active jobs
         if (parsed.crawlProgress) {
@@ -374,7 +377,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       crawlConfig,
       inputMode,
       crawlProgress,
-      uploadProjectName,
+      uploadProjectName: projectName,
     };
     try {
       localStorage.setItem('uploadZone_draft', JSON.stringify(draft));
@@ -385,7 +388,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         localStorage.removeItem('uploadZone_draft');
       } catch {}
     }
-  }, [sourceUrl, targetUrl, crawlConfig, inputMode, crawlProgress, draftRestored, uploadProjectName]);
+  }, [sourceUrl, targetUrl, crawlConfig, inputMode, crawlProgress, draftRestored, projectName]);
 
   const connectToCrawlJob = (jobId: string, type: 'source' | 'target', url: string) => {
     setIsProcessing(true);
@@ -577,8 +580,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 text-center">Project Name</label>
         <input
           type="text"
-          value={uploadProjectName}
-          onChange={(e) => setUploadProjectName(e.target.value)}
+          value={projectName}
+          onChange={(e) => setProjectName?.(e.target.value)}
           className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-brand-500 text-center shadow-sm"
           placeholder="e.g. Acme Corp Migration"
         />

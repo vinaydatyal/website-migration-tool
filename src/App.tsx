@@ -786,6 +786,8 @@ export function App() {
               setSourceEntries(src);
               setTargetEntries(tgt);
             }}
+            projectName={projectName}
+            setProjectName={setProjectName}
           />
         ) : (
           <div className="space-y-6">
