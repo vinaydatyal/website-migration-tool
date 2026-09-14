@@ -421,7 +421,20 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         }));
       } else if (data.type === 'done') {
         eventSource.close();
-        const entries = data.results || [];
+        
+        // Ensure crawled entries have normalizedPath populated (crawler.js doesn't provide it)
+        const entries = (data.results || []).map((entry: any) => {
+          if (!entry.normalizedPath && entry.url) {
+            try {
+              const u = new URL(entry.url);
+              entry.normalizedPath = u.pathname;
+            } catch (e) {
+              entry.normalizedPath = '/';
+            }
+          }
+          return entry;
+        });
+
         const summary = data.summary || {
           totalDiscovered: entries.length,
           crawledCount: entries.length,
@@ -1481,9 +1494,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
         <button
           onClick={handleStartAnalysis}
-          disabled={(!sourceEntries && !targetEntries) || isProcessing}
+          disabled={
+            (!sourceEntries?.length && !targetEntries?.length) || 
+            isProcessing ||
+            (crawlProgress?.source?.status === 'crawling') ||
+            (crawlProgress?.target?.status === 'crawling')
+          }
           className={`w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all shadow-lg ${
-            sourceEntries || targetEntries
+            (sourceEntries?.length || targetEntries?.length) && !isProcessing && crawlProgress?.source?.status !== 'crawling' && crawlProgress?.target?.status !== 'crawling'
               ? 'bg-gradient-to-r from-brand-500 to-emerald-500 text-slate-950 hover:from-brand-400 hover:to-emerald-400 shadow-brand-500/25 cursor-pointer transform hover:-translate-y-0.5'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
           }`}

@@ -268,15 +268,28 @@ export function App() {
     setProcessProgress(0);
 
     try {
-      let computedMappings: UrlMapping[] = [];
+      // Ensure normalizedPath exists for older crawl data
+      const safeSrc = (src || []).map(entry => {
+        if (!entry.normalizedPath && entry.url) {
+          try { entry.normalizedPath = new URL(entry.url).pathname; } catch (e) { entry.normalizedPath = '/'; }
+        }
+        return entry;
+      });
+      const safeTgt = (tgt || []).map(entry => {
+        if (!entry.normalizedPath && entry.url) {
+          try { entry.normalizedPath = new URL(entry.url).pathname; } catch (e) { entry.normalizedPath = '/'; }
+        }
+        return entry;
+      });
 
-      if (src && src.length > 0 && tgt && tgt.length > 0) {
-        computedMappings = await matchSourceAndTargetEntriesAsync(src, tgt, threshold, profile, (prog) => {
+      if (safeSrc.length > 0 && safeTgt.length > 0) {
+        computedMappings = await matchSourceAndTargetEntriesAsync(safeSrc, safeTgt, threshold, profile, (prog) => {
           setProcessProgress(prog);
         });
-      } else if (src && src.length > 0) {
+      } else if (safeSrc.length > 0) {
         // Source-only audit: All source entries are unmapped
-        computedMappings = src.map(source => ({
+        toast.warning(`Running Source-Only Audit: ${tgt ? 0 : 'No'} Target URLs were provided. All ${safeSrc.length} URLs will be marked as UNMAPPED.`);
+        computedMappings = safeSrc.map(source => ({
           id: `map_${crypto.randomUUID()}`,
           source,
           targetUrl: '',

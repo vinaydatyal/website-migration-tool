@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CrawlEntry } from '../types/migration';
-import { Search, Database, ExternalLink, Info } from 'lucide-react';
+import { Search, Database, ExternalLink, Info, Download } from 'lucide-react';
 
 interface CrawlDataViewProps {
   sourceEntries: CrawlEntry[] | null;
@@ -36,6 +36,39 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
     const start = (currentPage - 1) * itemsPerPage;
     return filteredData.slice(start, start + itemsPerPage);
   }, [filteredData, currentPage]);
+
+  const handleExport = () => {
+    if (!currentData || currentData.length === 0) return;
+    
+    const headers = ['URL', 'Status Code', 'Indexability', 'Title', 'Meta Description', 'H1', 'H2', 'Word Count', 'Canonical', 'Inlinks', 'Outlinks'];
+    
+    const rows = currentData.map(entry => [
+      entry.url,
+      entry.statusCode,
+      entry.indexability || 'Unknown',
+      entry.title || '',
+      entry.metaDescription || '',
+      entry.h1 || '',
+      entry.h2 || '',
+      entry.wordCount || 0,
+      entry.canonical || '',
+      entry.inlinks || 0,
+      entry.outlinks || 0
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeTab}_crawl_data.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -80,15 +113,25 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
           </button>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Search URLs, titles, or metaDescriptions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
-          />
+        <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search URLs, titles, or metaDescriptions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
+            />
+          </div>
+          <button
+            onClick={handleExport}
+            disabled={!currentData || currentData.length === 0}
+            className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg border border-slate-700 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
         </div>
       </div>
 
@@ -100,6 +143,8 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
               <tr>
                 <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-1/4">URL</th>
                 <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-1/4">Title & Description</th>
+                <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-1/5">H1 & H2</th>
+                <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-24">Words</th>
                 <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-24">Status</th>
                 <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 w-32">Indexability</th>
                 <th className="px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">Canonical</th>
@@ -149,6 +194,19 @@ export const CrawlDataView: React.FC<CrawlDataViewProps> = ({ sourceEntries, tar
                           {entry.metaDescription || <span className="text-slate-600 italic">No Meta Description</span>}
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-800/50">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium text-slate-300 line-clamp-1" title={entry.h1 || 'Missing H1'}>
+                          <span className="text-slate-500 font-normal mr-1">H1:</span>{entry.h1 || <span className="text-slate-600 italic">None</span>}
+                        </div>
+                        <div className="text-xs text-slate-400 line-clamp-1" title={entry.h2 || 'Missing H2'}>
+                          <span className="text-slate-500 mr-1">H2:</span>{entry.h2 || <span className="text-slate-600 italic">None</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 border-b border-slate-800/50">
+                      <span className="text-sm text-slate-300 font-mono">{entry.wordCount?.toLocaleString() || 0}</span>
                     </td>
                     <td className="px-6 py-4 border-b border-slate-800/50">
                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-mono font-medium ${

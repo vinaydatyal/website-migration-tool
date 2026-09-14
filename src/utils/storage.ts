@@ -12,6 +12,8 @@ const snapshotStore = localforage.createInstance({
   storeName: 'projectSnapshots'
 });
 
+import toast from 'react-hot-toast';
+
 export async function saveProjectToIndexedDB(project: MigrationProject): Promise<void> {
   try {
     // Auto-update timestamp
@@ -35,8 +37,9 @@ export async function saveProjectToIndexedDB(project: MigrationProject): Promise
         if (error) console.warn('Supabase sync notice:', error.message);
       })
       .then(undefined, (e) => console.warn('Supabase connection notice:', e));
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to save project to IndexedDB:', error);
+    toast.error(`Failed to save project data: ${error.message || 'Storage full or object too large'}`);
   }
 }
 
@@ -71,32 +74,39 @@ export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]>
     // 1. Load all local projects from IndexedDB
     await projectStore.iterate<MigrationProject, void>((val) => {
       if (val && val.id) {
-        localProjects.push(val);
+        // Filter out soft-deleted projects
+        if (!(val as any).isDeleted) {
+          localProjects.push(val);
+        }
       }
     });
 
     // 2. Attempt to pull from Supabase and merge
     try {
-      const { data, error } = await supabase
-        .from('migrationProjects')
-        .select('project_data, updated_at')
-        .order('updated_at', { ascending: false });
-
-      if (!error && data) {
-        const localMap = new Map(localProjects.map(p => [p.id, p]));
-        for (const row of data) {
+      const { data: remoteData, error } = await supabase.from('migrationProjects').select('id, project_data, updated_at');
+      if (!error && remoteData) {
+        for (const row of remoteData) {
           const remoteP = row.project_data as MigrationProject;
-          if (remoteP && remoteP.id) {
-            const existing = localMap.get(remoteP.id);
-            if (!existing) {
-              localProjects.push(remoteP);
-              projectStore.setItem(remoteP.id, remoteP).then(undefined, () => {});
-            } else {
-              const remoteTime = new Date(remoteP.updatedAt || 0).getTime();
-              const localTime = new Date(existing.updatedAt || 0).getTime();
-              // Prefer whichever copy has more source/target data or is newer
-              const remoteCount = (remoteP.sourceEntries?.length || 0) + (remoteP.targetEntries?.length || 0);
-              const localCount = (existing.sourceEntries?.length || 0) + (existing.targetEntries?.length || 0);
+          if ((remoteP as any).isDeleted) continue;
+          
+          const remoteTime = new Date(remoteP.updatedAt || 0).getTime();
+          const existing = localProjects.find(p => p.id === remoteP.id);
+          
+          // Check if it exists in DB as deleted (so it didn't make it to localProjects array)
+          const dbItem = await projectStore.getItem<MigrationProject>(remoteP.id);
+          if (dbItem && (dbItem as any).isDeleted) {
+             continue; // Don't restore if soft-deleted locally
+          }
+
+          if (!existing) {
+            projectStore.setItem(remoteP.id, remoteP).then(undefined, () => {});
+            localProjects.push(remoteP);
+          } else {
+            // Overwrite local if remote is newer
+            const localTime = new Date(existing.updatedAt || 0).getTime();
+            if (remoteTime > localTime) {
+              const remoteCount = remoteP.sourceEntries?.length || 0;
+              const localCount = existing.sourceEntries?.length || 0;
               if (remoteCount > localCount || (remoteCount === localCount && remoteTime > localTime)) {
                 Object.assign(existing, remoteP);
                 projectStore.setItem(remoteP.id, remoteP).then(undefined, () => {});
@@ -120,8 +130,12 @@ export async function getAllProjectsFromIndexedDB(): Promise<MigrationProject[]>
 
 export async function deleteProjectFromIndexedDB(id: string): Promise<void> {
   try {
-    // 1. Delete locally
-    await projectStore.removeItem(id);
+    // 1. Soft delete locally to prevent re-sync from Supabase if remote delete fails
+    const existing = await projectStore.getItem<MigrationProject>(id);
+    if (existing) {
+      (existing as any).isDeleted = true;
+      await projectStore.setItem(id, existing);
+    }
     
     // 2. Delete from Supabase (await to prevent race condition when fetching projects immediately after)
     const { error: snapErr } = await supabase.from('projectSnapshots').delete().eq('project_id', id);
