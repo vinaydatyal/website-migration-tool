@@ -841,6 +841,7 @@ export function App() {
                     isGscConnected={isGscConnected}
                     onGscConnected={() => setIsGscConnected(true)}
                     snapshots={snapshots}
+                    projectId={projectId}
                   />
                 )
               } />

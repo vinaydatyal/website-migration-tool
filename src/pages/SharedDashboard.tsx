@@ -16,6 +16,7 @@ export const SharedDashboard: React.FC = () => {
     const fetchProject = async () => {
       try {
         if (!id) throw new Error('No project ID provided');
+        if (id === 'demo') throw new Error('This is an unsaved project. Please save the project first before sharing.');
         
         const { data, error } = await supabase
           .from('migrationProjects')

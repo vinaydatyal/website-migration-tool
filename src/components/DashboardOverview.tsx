@@ -37,6 +37,7 @@ interface DashboardOverviewProps {
   onGscConnected: () => void;
   snapshots: MigrationSnapshot[];
   isReadOnly?: boolean;
+  projectId?: string | null;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -51,6 +52,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onGscConnected,
   snapshots,
   isReadOnly = false,
+  projectId,
 }) => {
   const [currentIssuePage, setCurrentIssuePage] = React.useState(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
@@ -91,25 +93,24 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   };
 
   const handleShare = () => {
-    // Assuming the URL has an ID or we rely on the parent page
-    // Actually, we can just copy the current URL if we are on the /share page
-    // But this component doesn't know its ID. We can extract from path or just copy window.location.href if it's already a share link.
-    // However, if we are in the main editor, we need the project ID to form the share link.
-    // A better approach is to copy the window.location.origin + '/share/' + stats.projectId
-    // But stats doesn't have projectId. Let's just pass a prop or extract from URL.
-    // Wait, the project is currently unsaved or saved? 
-    // We'll rely on the App router. For now, let's just copy a constructed URL.
-    // Assuming the parent handles the URL construction. We can emit an event or construct it.
-    // Let's grab it from window.location.hash or pathname for now, or just emit an event?
-    // Let's implement it cleanly: we will use a global event or just window.location.
-    const url = new URL(window.location.href);
-    // if URL has ?id= we use that
-    const searchParams = new URLSearchParams(url.search);
-    const id = searchParams.get('id');
-    const shareUrl = id ? `${window.location.origin}/share/${id}` : `${window.location.origin}/share/demo`;
+    // Determine the share ID: if we're in readOnly mode, we might already have it in the URL
+    // If not, use the passed projectId from App.tsx
+    let shareId = projectId;
     
-    // We will just dispatch a custom event that App.tsx can listen to, or we handle it directly if we can't change props.
-    // Given we can't easily add a new prop without breaking App.tsx if it's not ready, let's just copy the current URL if it's a share page, or construct one.
+    if (isReadOnly) {
+      const urlMatches = window.location.pathname.match(/\/share\/([^/]+)/);
+      if (urlMatches && urlMatches[1]) {
+        shareId = urlMatches[1];
+      }
+    }
+    
+    if (!shareId) {
+      toast.error('Cannot share unsaved project. Please save it first.');
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}/share/${shareId}`;
+    
     navigator.clipboard.writeText(shareUrl);
     setIsCopied(true);
     toast.success('Share link copied to clipboard!');
