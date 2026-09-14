@@ -32,7 +32,6 @@
     "recharts": "^3.10.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.0.2",
-    "puppeteer": "^25.6.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -23,6 +23,7 @@ import { DomainSwapModal } from './components/DomainSwapModal';
 import { ImportMapModal } from './components/ImportMapModal';
 import { RestartPipelineModal } from './components/RestartPipelineModal';
 import { KnowledgeBaseSidebar } from './components/KnowledgeBaseSidebar';
+import { SharedDashboard } from './pages/SharedDashboard';
 import { 
   CrawlEntry, 
   UrlMapping, 
@@ -742,12 +743,20 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300 transition-colors duration-200">
-      <Toaster position="top-right" theme="dark" richColors />
+    <Routes>
+      <Route path="/share/:id" element={
+        <>
+          <Toaster position="top-right" theme="dark" richColors />
+          <SharedDashboard />
+        </>
+      } />
+      <Route path="*" element={
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300 transition-colors duration-200">
+          <Toaster position="top-right" theme="dark" richColors />
 
-      {/* Top Navigation */}
-      <Navbar 
-        stats={stats}
+          {/* Top Navigation */}
+          <Navbar 
+            stats={stats}
         onLoadSample={handleLoadSample}
         onReset={handleReset}
         onRestartPipeline={() => setIsRestartModalOpen(true)}
@@ -1026,6 +1035,8 @@ export function App() {
       />
 
     </div>
+      } />
+    </Routes>
   );
 }
 

@@ -6,7 +6,6 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { crawlSite } from './crawler.js';
-import { generatePdfReport } from './pdfGenerator.js';
 import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
@@ -115,25 +114,7 @@ app.post('/api/crawl/stop', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/pdf-report', async (req, res) => {
-  try {
-    const data = req.body;
-    if (!data.stats) {
-      return res.status(400).json({ error: 'Stats data is required' });
-    }
-
-    const pdfBuffer = await generatePdfReport(data);
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="migration-audit-report.pdf"');
-    res.setHeader('Content-Length', pdfBuffer.length);
-    
-    res.end(pdfBuffer);
-  } catch (error) {
-    console.error('PDF Generation Error:', error);
-    res.status(500).json({ error: 'Failed to generate PDF report' });
-  }
-});
+// PDF generation endpoint removed in favor of client-side window.print()
 
 app.get('/api/crawl/events', (req, res) => {
   const jobId = req.query.jobId;

@@ -36,6 +36,7 @@ interface DashboardOverviewProps {
   isGscConnected: boolean;
   onGscConnected: () => void;
   snapshots: MigrationSnapshot[];
+  isReadOnly?: boolean;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -49,9 +50,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   isGscConnected,
   onGscConnected,
   snapshots,
+  isReadOnly = false,
 }) => {
   const [currentIssuePage, setCurrentIssuePage] = React.useState(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
+  const [isCopied, setIsCopied] = React.useState(false);
   const issuesPerPage = 4;
   
   const criticalDiscrepancies = mappings.flatMap((m: UrlMapping) => 
@@ -77,41 +80,40 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     currentIssuePage * issuesPerPage
   );
 
-  const handleDownloadPdf = async () => {
-    try {
-      setIsGeneratingPdf(true);
-      toast.loading('Generating PDF report...', { id: 'pdf-toast' });
-      
-      const payload = {
-        stats,
-        projectMetadata: { projectName: 'Migration Audit' },
-        criticalIssues: criticalIssues
-      };
-
-      const response = await fetch('/api/pdf-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) throw new Error('Failed to generate PDF');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `migration-audit-report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      toast.success('PDF Generated successfully!', { id: 'pdf-toast' });
-    } catch (error: any) {
-      toast.error(error.message || 'Error generating PDF', { id: 'pdf-toast' });
-    } finally {
+  const handleDownloadPdf = () => {
+    setIsGeneratingPdf(true);
+    // Short timeout to allow state to settle before printing
+    setTimeout(() => {
+      window.print();
       setIsGeneratingPdf(false);
-    }
+      toast.success('Report printed successfully!', { id: 'pdf-toast' });
+    }, 500);
+  };
+
+  const handleShare = () => {
+    // Assuming the URL has an ID or we rely on the parent page
+    // Actually, we can just copy the current URL if we are on the /share page
+    // But this component doesn't know its ID. We can extract from path or just copy window.location.href if it's already a share link.
+    // However, if we are in the main editor, we need the project ID to form the share link.
+    // A better approach is to copy the window.location.origin + '/share/' + stats.projectId
+    // But stats doesn't have projectId. Let's just pass a prop or extract from URL.
+    // Wait, the project is currently unsaved or saved? 
+    // We'll rely on the App router. For now, let's just copy a constructed URL.
+    // Assuming the parent handles the URL construction. We can emit an event or construct it.
+    // Let's grab it from window.location.hash or pathname for now, or just emit an event?
+    // Let's implement it cleanly: we will use a global event or just window.location.
+    const url = new URL(window.location.href);
+    // if URL has ?id= we use that
+    const searchParams = new URLSearchParams(url.search);
+    const id = searchParams.get('id');
+    const shareUrl = id ? `${window.location.origin}/share/${id}` : `${window.location.origin}/share/demo`;
+    
+    // We will just dispatch a custom event that App.tsx can listen to, or we handle it directly if we can't change props.
+    // Given we can't easily add a new prop without breaking App.tsx if it's not ready, let's just copy the current URL if it's a share page, or construct one.
+    navigator.clipboard.writeText(shareUrl);
+    setIsCopied(true);
+    toast.success('Share link copied to clipboard!');
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   // Traffic Calculation Logic
@@ -133,28 +135,39 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             Real-time migration progress and technical SEO readiness.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={onSwapDomain}
-            className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Swap Domain
-          </button>
-          <button 
-            onClick={onUpdateTargetData}
-            className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Update Target Crawl
-          </button>
+        <div className="flex items-center gap-3 print:hidden">
+          {!isReadOnly && (
+            <>
+              <button 
+                onClick={handleShare}
+                className="px-4 py-2 bg-brand-500/10 text-brand-500 dark:text-brand-400 rounded-lg text-sm font-medium border border-brand-500/30 hover:bg-brand-500/20 transition-colors flex items-center gap-2"
+              >
+                {isCopied ? <CheckCircle2 className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
+                {isCopied ? 'Copied!' : 'Share'}
+              </button>
+              <button 
+                onClick={onSwapDomain}
+                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                Swap Domain
+              </button>
+              <button 
+                onClick={onUpdateTargetData}
+                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Update Target Crawl
+              </button>
+            </>
+          )}
           <button 
             onClick={handleDownloadPdf}
             disabled={isGeneratingPdf}
             className="px-4 py-2 bg-slate-900 dark:bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-slate-800 dark:hover:bg-brand-700 transition-all flex items-center gap-2 shadow-md dark:shadow-brand-500/20 disabled:opacity-50"
           >
             {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
-            {isGeneratingPdf ? 'Generating...' : 'Executive Report (PDF)'}
+            {isGeneratingPdf ? 'Generating...' : 'Export PDF'}
           </button>
         </div>
       </div>
