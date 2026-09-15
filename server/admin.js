@@ -6,9 +6,9 @@ import WebSocket from 'ws';
 const router = express.Router();
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''; // Needs service role to bypass RLS and update status
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder_key'; // Fallback to anon key to prevent crash on startup
 
-const supabase = createClient(supabaseUrl, supabaseKey, {
+const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey, {
   auth: { persistSession: false },
   global: { WebSocket },
   realtime: { transport: WebSocket }
