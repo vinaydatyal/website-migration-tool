@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, X, CheckCircle2, Upload, FileSpreadsheet, Loader2, AlertCircle, FileText, Settings, ShieldAlert, UserCircle2, Cookie } from 'lucide-react';
 import { CrawlEntry } from '../types/migration';
 import { parseScreamingFrogCsv, parseScreamingFrogExcel } from '../utils/parser';
+import { supabase } from '../utils/supabaseClient';
 
 interface Props {
   isOpen: boolean;
@@ -104,13 +105,16 @@ export const DataSourcesModal: React.FC<Props> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, [isOpen]);
 
-  const handleOAuth = (service: 'gsc' | 'ga4') => {
+  const handleOAuth = async (service: 'gsc' | 'ga4') => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    
     const width = 500;
     const height = 600;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
     window.open(
-      `/api/gsc/auth?service=${service}`,
+      `/api/gsc/auth?service=${service}&token=${token}`,
       'GoogleAuth',
       `width=${width},height=${height},left=${left},top=${top}`
     );

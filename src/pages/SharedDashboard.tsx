@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import { DashboardOverview } from '../components/DashboardOverview';
 import { UrlMappingTable } from '../components/UrlMappingTable';
+import { SeoParityView } from '../components/SeoParityView';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { MigrationProject } from '../types/migration';
 
@@ -89,11 +90,19 @@ export const SharedDashboard: React.FC = () => {
           <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">URL Mappings Overview</h3>
           <UrlMappingTable
             mappings={project.mappings}
+            sourceEntries={project.sourceEntries || []}
             targetEntries={project.targetEntries || []}
             onUpdateMapping={() => {}}
-            onDeleteMapping={() => {}}
             onBulkUpdateMappings={() => {}}
-            onBulkDeleteMapping={() => {}}
+            confidenceThreshold={80}
+            onUpdateThreshold={() => {}}
+          />
+        </div>
+
+        <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
+          <SeoParityView 
+            mappings={project.mappings} 
+            resolvedDiscrepancies={project.resolvedDiscrepancies || {}}
           />
         </div>
       </div>

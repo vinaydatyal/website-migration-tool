@@ -10,6 +10,7 @@ import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
 import { verifyAuth } from './authMiddleware.js';
+import { generatePdfReport } from './pdf.js';
 
 const app = express();
 app.use(cors());
@@ -214,7 +215,7 @@ app.get('/api/ping-url', verifyAuth, async (req, res) => {
 });
 
 // --- Google Search Console Endpoints ---
-app.get('/api/gsc/auth', generateAuthUrl); // We'll keep the name or could rename to /api/auth/google
+app.get('/api/gsc/auth', verifyAuth, generateAuthUrl); // We'll keep the name or could rename to /api/auth/google
 app.get('/api/auth/google/callback', handleAuthCallback);
 app.post('/api/gsc/data', verifyAuth, fetchGscData);
 app.get('/api/gsc/sites', verifyAuth, fetchGscSites);

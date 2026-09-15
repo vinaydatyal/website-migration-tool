@@ -1,45 +1,24 @@
 import { google } from 'googleapis';
 import crypto from 'crypto';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
+// Initialize Supabase Client for the backend
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const TOKEN_FILE = path.join(__dirname, '..', '.gsc_tokens.json');
 
 // Use environment variables or placeholders if not provided
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/auth/google/callback';
-
-// Temporary in-memory store for tokens (in production, save to DB)
-const tokenStore = new Map();
-
-// Load tokens from disk if available
-try {
-  if (fs.existsSync(TOKEN_FILE)) {
-    const data = fs.readFileSync(TOKEN_FILE, 'utf8');
-    const parsed = JSON.parse(data);
-    if (parsed.gsc) tokenStore.set('gsc', parsed.gsc);
-    if (parsed.ga4) tokenStore.set('ga4', parsed.ga4);
-    if (parsed.currentUser) tokenStore.set('gsc', parsed.currentUser); // Legacy
-  }
-} catch (e) {
-  console.warn('Failed to load GSC tokens from disk:', e.message);
-}
-
-function saveTokensToDisk() {
-  try {
-    const data = { gsc: tokenStore.get('gsc'), ga4: tokenStore.get('ga4') };
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) {
-    console.warn('Failed to save GSC tokens to disk:', e.message);
-  }
-}
 
 function getOAuthClient(req) {
   let redirectUri = REDIRECT_URI;
@@ -64,7 +43,13 @@ export function generateAuthUrl(req, res) {
     'https://www.googleapis.com/auth/analytics.readonly'
   ];
 
-  const stateObj = { service, r: crypto.randomBytes(8).toString('hex') };
+  // We now have req.user from verifyAuth middleware
+  const userId = req.user?.sub;
+  if (!userId) {
+    return res.status(401).send('Unauthorized: User ID missing.');
+  }
+
+  const stateObj = { service, userId, r: crypto.randomBytes(8).toString('hex') };
   const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
   
   const url = oauth2Client.generateAuthUrl({
@@ -74,11 +59,8 @@ export function generateAuthUrl(req, res) {
     prompt: 'consent'
   });
 
-  // Redirect directly — this lets the client open the popup to this endpoint
-  // without needing an async fetch first (which browsers block as popup navigation).
   res.redirect(url);
 }
-
 
 export async function handleAuthCallback(req, res) {
   const { code, state } = req.query;
@@ -92,19 +74,32 @@ export async function handleAuthCallback(req, res) {
     const { tokens } = await oauth2Client.getToken(code);
     
     let service = 'gsc';
+    let userId = null;
     try {
       if (state) {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
         if (decoded.service) service = decoded.service;
+        if (decoded.userId) userId = decoded.userId;
       }
     } catch (e) {}
-    
-    tokenStore.set('gsc', tokens);
-    tokenStore.set('ga4', tokens);
-    saveTokensToDisk();
 
-    // Persist token in HTTP-only cookie for 30 days to survive Railway restarts
-    res.setHeader('Set-Cookie', `gsc_tokens=${encodeURIComponent(JSON.stringify(tokens))}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`);
+    if (userId) {
+      // Upsert tokens into Supabase for BOTH services to avoid double authentication
+      const upsertData = [
+        { user_id: userId, service: 'gsc', tokens },
+        { user_id: userId, service: 'ga4', tokens }
+      ];
+
+      const { error } = await supabase
+        .from('userTokens')
+        .upsert(upsertData, { onConflict: 'user_id,service' });
+
+      if (error) {
+        console.error('Error saving tokens to Supabase:', error);
+      }
+    } else {
+      console.error('No userId found in OAuth state, tokens will not be saved to DB.');
+    }
 
     res.send(`
       <html>
@@ -123,19 +118,24 @@ export async function handleAuthCallback(req, res) {
   }
 }
 
-function getTokensFromReq(req, service) {
-  // Check cookie first (survives container restarts)
-  const cookieHeader = req.headers.cookie;
-  if (cookieHeader) {
-    const match = cookieHeader.match(/gsc_tokens=([^;]+)/);
-    if (match) {
-      try {
-        return JSON.parse(decodeURIComponent(match[1]));
-      } catch (e) {}
-    }
+async function getTokensFromReq(req, service) {
+  const userId = req.user?.sub;
+  if (!userId) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('userTokens')
+      .select('tokens')
+      .eq('user_id', userId)
+      .eq('service', service)
+      .single();
+      
+    if (error || !data) return null;
+    return data.tokens;
+  } catch (e) {
+    console.error('Failed to get tokens from Supabase:', e);
+    return null;
   }
-  // Fallback to in-memory store
-  return tokenStore.get(service);
 }
 
 export async function fetchGscData(req, res) {
@@ -145,7 +145,7 @@ export async function fetchGscData(req, res) {
     return res.status(400).json({ error: 'siteUrl is required' });
   }
 
-  const tokens = getTokensFromReq(req, 'gsc');
+  const tokens = await getTokensFromReq(req, 'gsc');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Search Console.' });
   }
@@ -192,7 +192,7 @@ export async function fetchGscData(req, res) {
 }
 
 export async function fetchGscSites(req, res) {
-  const tokens = getTokensFromReq(req, 'gsc');
+  const tokens = await getTokensFromReq(req, 'gsc');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Search Console.' });
   }
@@ -217,7 +217,7 @@ export async function fetchGscSites(req, res) {
 }
 
 export async function fetchGa4Properties(req, res) {
-  const tokens = getTokensFromReq(req, 'ga4');
+  const tokens = await getTokensFromReq(req, 'ga4');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Analytics.' });
   }
@@ -233,6 +233,10 @@ export async function fetchGa4Properties(req, res) {
 
     const response = await analyticsadmin.accountSummaries.list();
     const accountSummaries = response.data.accountSummaries || [];
+    console.log('GA4 API response accountSummaries count:', accountSummaries.length);
+    if (accountSummaries.length === 0) {
+      console.log('Full GA4 response:', JSON.stringify(response.data, null, 2));
+    }
     
     const properties = [];
     accountSummaries.forEach(account => {
@@ -259,7 +263,7 @@ export async function fetchGa4Data(req, res) {
     return res.status(400).json({ error: 'propertyId is required' });
   }
 
-  const tokens = getTokensFromReq(req, 'ga4');
+  const tokens = await getTokensFromReq(req, 'ga4');
   if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated with Google Analytics.' });
   }

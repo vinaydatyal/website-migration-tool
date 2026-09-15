@@ -526,9 +526,19 @@ export function App() {
 
   const handleUpdateMapping = (mappingId: string, updates: Partial<UrlMapping>) => {
     pushToHistory();
+    const mappingToUpdate = mappings.find(m => m.id === mappingId);
+    if (!mappingToUpdate) return;
+    
+    const sourceUrl = mappingToUpdate.source.url;
+    
     const updated = mappings.map(m => {
       if (m.id === mappingId) {
         return { ...m, ...updates };
+      }
+      // Sync status across clones of the same source URL to avoid them having different statuses,
+      // but don't apply other updates (like targetUrl) so they don't become identical duplicates.
+      if (m.source.url === sourceUrl && 'status' in updates) {
+        return { ...m, status: updates.status! };
       }
       return m;
     });
@@ -537,7 +547,13 @@ export function App() {
     if (sourceEntries && targetEntries) {
       setStats(calculateMigrationStats(sourceEntries, targetEntries, updated, projectProfile, resolvedDiscrepancies));
     }
-    toast.success('Updated 301 URL mapping.');
+    
+    const updateCount = updated.filter(m => m.source.url === sourceUrl).length;
+    if (updateCount > 1) {
+      toast.success(`Updated ${updateCount} identical URL mappings globally.`);
+    } else {
+      toast.success('Updated 301 URL mapping.');
+    }
   };
 
   const handleUpdateMetadata = (updates: Partial<ProjectMetadata>) => {
@@ -744,27 +760,33 @@ export function App() {
     stats
   );
 
-  const handleMergeGscData = (gscData: any[]) => {
+  const handleMergeAnalyticsData = (gscData: any[], ga4Data: any[]) => {
     if (!sourceEntries) return;
 
-    // Create a map of URL to GSC data for fast lookup
-    // Ignore trailing slashes for better matching
     const gscMap = new Map(gscData.map(d => [d.url.replace(/\/$/, ''), d]));
+    const ga4Map = new Map(ga4Data.map(d => [d.url.replace(/\/$/, ''), d]));
 
     const updatedEntries = sourceEntries.map(entry => {
-      const match = gscMap.get(entry.url.replace(/\/$/, ''));
-      if (match) {
-        return {
-          ...entry,
-          visits: match.clicks, // use clicks as visits
-          revenue: match.impressions // temp map impressions to revenue to reuse visual indicators if needed
-        };
+      const gscMatch = gscMap.get(entry.url.replace(/\/$/, ''));
+      const ga4Match = ga4Map.get(entry.url.replace(/\/$/, ''));
+      
+      let updated = { ...entry };
+      if (gscMatch) {
+        updated.clicks = gscMatch.clicks;
+        updated.impressions = gscMatch.impressions;
+        updated.ctr = gscMatch.ctr;
+        // Use GSC clicks for backwards compatibility if GA4 isn't available
+        updated.visits = gscMatch.clicks;
       }
-      return entry;
+      if (ga4Match) {
+        updated.visits = ga4Match.sessions || ga4Match.screenPageViews || updated.visits;
+        updated.revenue = ga4Match.totalRevenue;
+      }
+      return updated;
     });
 
     setSourceEntries(updatedEntries);
-    toast.success('GSC metrics merged with source URLs');
+    toast.success('Analytics data successfully merged!');
   };
 
   return (
@@ -838,7 +860,42 @@ export function App() {
                       </>
                     )}
                   </div>
-              <Route path="/:projectSlug/mapping" element={
+                </div>
+              )}
+
+              {(!hasData && !isRestoring) ? (
+                <UploadZone 
+                  onDataParsed={handleDataParsed}
+                  onLoadSample={handleLoadSample}
+                  onSyncDraftData={(src, tgt) => {
+                    setSourceEntries(src);
+                    setTargetEntries(tgt);
+                  }}
+                  projectName={projectName}
+                  setProjectName={setProjectName}
+                />
+              ) : (
+                <div className="space-y-6">
+                  <Routes>
+                    <Route path="/:projectSlug/dashboard" element={
+                      stats && (
+                        <DashboardOverview
+                          stats={stats}
+                          mappings={mappings}
+                          onNavigateTab={(tab) => navigate(`/${slugify(projectName || 'Untitled Project')}/${tab}`)}
+                          onOpenExport={() => setIsExportOpen(true)}
+                          onUpdateTargetData={() => setIsDataSourcesOpen(true)}
+                          onSwapDomain={() => setIsDomainSwapOpen(true)}
+                          onMergeGscData={handleMergeAnalyticsData}
+                          isGscConnected={isGscConnected}
+                          onGscConnected={() => setIsGscConnected(true)}
+                          snapshots={snapshots}
+                          projectId={projectId}
+                        />
+                      )
+                    } />
+
+                <Route path="/:projectSlug/mapping" element={
                 <UrlMappingTable
                   mappings={mappings}
                   sourceEntries={sourceEntries || []}
@@ -928,9 +985,18 @@ export function App() {
 
               <Route path="*" element={<Navigate to={`/${slugify(projectName || 'Untitled Project')}/dashboard`} replace />} />
             </Routes>
+            </div>
+          )}
+          
+          {/* Print-only components */}
+          <div className="hidden print:block print:mt-16 w-full">
+            <SeoParityView 
+              mappings={mappings} 
+              resolvedDiscrepancies={resolvedDiscrepancies}
+              onToggleDiscrepancyResolution={handleToggleDiscrepancyResolution}
+            />
           </div>
-        )}
-      </main>
+        </main>
 
       {/* Footer */}
       <footer className="w-full border-t border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm py-4 text-center text-xs text-slate-500">
@@ -974,6 +1040,8 @@ export function App() {
         <DataSourcesModal
           isOpen={isDataSourcesOpen}
           onClose={() => setIsDataSourcesOpen(false)}
+          isGscConnected={gscConnected}
+          isGa4Connected={ga4Connected}
           onDataParsed={(entries, type) => {
             if (type === 'source') {
               handleUpdateSourceData(entries);
@@ -987,7 +1055,6 @@ export function App() {
             setSourceEntries(enriched);
             toast.success('Analytics data successfully merged!');
           }}
-          isGa4Connected={isGa4Connected}
           onGa4Connected={() => setIsGa4Connected(true)}
         />
       )}
@@ -1029,8 +1096,8 @@ export function App() {
         activeContext={helpContext}
       />
 
-          </ProtectedRoute>
-        </div>
+          </div>
+        </ProtectedRoute>
       } />
     </Routes>
   );

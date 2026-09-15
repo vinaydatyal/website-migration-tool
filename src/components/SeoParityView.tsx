@@ -43,6 +43,8 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState<string>('');
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const [editTargetInput, setEditTargetInput] = useState<string>('');
 
   // Debounce filter inputs for performance
   React.useEffect(() => {
@@ -120,18 +122,28 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
     });
   });
 
+  // Calculate Groups
+  const groupedDiscrepancies = React.useMemo(() => {
+    return filteredDiscrepancies.reduce((acc, item) => {
+      if (!acc[item.type]) {
+        acc[item.type] = {
+          type: item.type,
+          title: item.title,
+          description: item.description,
+          severity: item.severity,
+          items: []
+        };
+      }
+      acc[item.type].items.push(item);
+      return acc;
+    }, {} as Record<string, { type: string, title: string, description: string, severity: string, items: typeof filteredDiscrepancies }>);
+  }, [filteredDiscrepancies]);
+
   // Reset to page 1 and clear selection when filters change
   React.useEffect(() => {
     setCurrentPage(1);
     setSelectedItemIds(new Set());
-  }, [deferredConditions, severityFilter, errorTypeFilter]);
-
-  // Calculate Paginated Rows
-  const totalPages = Math.ceil(filteredDiscrepancies.length / itemsPerPage);
-  const paginatedDiscrepancies = filteredDiscrepancies.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  }, [deferredConditions, severityFilter, errorTypeFilter, expandedGroup]);
 
   const criticalCount = allDiscrepancies.filter(d => d.severity === 'CRITICAL').length;
   const highCount = allDiscrepancies.filter(d => d.severity === 'HIGH').length;
@@ -330,63 +342,35 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
         </div>
       )}
 
-      {/* Discrepancies List */}
+      {/* Discrepancies List or Overview */}
       <div className="space-y-4">
-        {paginatedDiscrepancies.length === 0 ? (
+        {Object.keys(groupedDiscrepancies).length === 0 ? (
           <div className="p-12 text-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 space-y-3 shadow-sm">
             <ShieldCheck className="h-10 w-10 text-brand-500 dark:text-brand-400 mx-auto" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white">No Discrepancies in Active Filter</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">All evaluated URL pairs meet the selected SEO parity criteria.</p>
           </div>
-        ) : (
-          Object.values(
-            paginatedDiscrepancies.reduce((acc, item) => {
-              if (!acc[item.type]) {
-                acc[item.type] = {
-                  type: item.type,
-                  title: item.title,
-                  description: item.description,
-                  severity: item.severity,
-                  items: []
-                };
-              }
-              acc[item.type].items.push(item);
-              return acc;
-            }, {} as Record<string, { type: string, title: string, description: string, severity: string, items: typeof paginatedDiscrepancies }>)
-          ).map((group) => {
-            const isCritical = group.severity === 'CRITICAL';
-            const isHigh = group.severity === 'HIGH';
-
-            return (
-              <div 
-                key={group.type}
-                className={`overflow-hidden rounded-2xl border transition-all shadow-sm ${
-                  isCritical 
-                    ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-500/30' 
-                    : isHigh 
-                    ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-500/30'
-                    : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
-                }`}
-              >
-                {/* Group Header */}
-                <div className={`p-5 border-b ${
-                  isCritical ? 'border-red-200 dark:border-red-500/30 bg-red-100/50 dark:bg-red-950/40' : isHigh ? 'border-amber-200 dark:border-amber-500/30 bg-amber-100/50 dark:bg-amber-950/40' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80'
-                }`}>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center space-x-2.5">
-                      {isCritical ? (
-                        <AlertOctagon className="h-5 w-5 text-red-500 dark:text-red-400 shrink-0" />
-                      ) : isHigh ? (
-                        <AlertTriangle className="h-5 w-5 text-amber-500 dark:text-amber-400 shrink-0" />
-                      ) : (
-                        <Info className="h-5 w-5 text-teal-500 dark:text-teal-400 shrink-0" />
-                      )}
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white">{group.title}</h3>
-                      <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-950/50 px-2 py-0.5 rounded-md">
-                        {group.items.length} affected
-                      </span>
+        ) : expandedGroup === null ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-4">
+            {Object.values(groupedDiscrepancies).sort((a,b) => b.items.length - a.items.length).map(group => {
+              const isCritical = group.severity === 'CRITICAL';
+              const isHigh = group.severity === 'HIGH';
+              return (
+                <div 
+                  key={group.type}
+                  onClick={() => setExpandedGroup(group.type)}
+                  className={`relative overflow-hidden rounded-2xl border p-5 flex flex-col gap-3 transition-all cursor-pointer hover:shadow-md ${
+                    isCritical 
+                      ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/50' 
+                      : isHigh 
+                      ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-500/30 hover:border-amber-300 dark:hover:border-amber-500/50'
+                      : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className={`p-2 rounded-xl ${isCritical ? 'bg-red-100/80 text-red-600 dark:bg-red-500/20 dark:text-red-400' : isHigh ? 'bg-amber-100/80 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400' : 'bg-slate-100 text-teal-600 dark:bg-slate-800 dark:text-teal-400'}`}>
+                       {isCritical ? <AlertOctagon size={20} /> : isHigh ? <AlertTriangle size={20} /> : <Info size={20} />}
                     </div>
-
                     <span className={`text-[10px] font-mono uppercase font-bold px-2.5 py-0.5 rounded-full ${
                       isCritical 
                         ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30' 
@@ -394,222 +378,344 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                         ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent'
                     }`}>
-                      {group.severity} SEVERITY
+                      {group.severity}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 pl-8">{group.description}</p>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">{group.title}</h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">{group.description}</p>
+                  </div>
+                  <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-200/50 dark:border-slate-700/50">
+                    <div className="text-sm font-bold text-slate-900 dark:text-white">
+                      {group.items.length} <span className="text-slate-500 dark:text-slate-400 text-xs font-normal">affected URLs</span>
+                    </div>
+                    <div className="flex items-center text-xs font-semibold text-brand-600 dark:text-brand-400">
+                      View details <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                    </div>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        ) : (
+          (() => {
+            const group = groupedDiscrepancies[expandedGroup];
+            if (!group) {
+              // Edge case if filters change and empty the group while expanded
+              setTimeout(() => setExpandedGroup(null), 0);
+              return null;
+            }
 
-                <div className="w-full overflow-x-auto">
-                  <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800/50">
-                        <th className="py-3 px-4 font-semibold w-10 text-center">
-                          <input 
-                            type="checkbox" 
-                            checked={group.items.length > 0 && group.items.every(i => selectedItemIds.has(i.id))}
-                            onChange={() => handleToggleSelectAll(group.items)}
-                            className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 cursor-pointer"
-                          />
-                        </th>
-                        <th className="py-3 px-4 font-semibold">Source URL (Old)</th>
-                        <th className="py-3 px-4 font-semibold">Source Value</th>
-                        <th className="py-3 px-4 font-semibold">Target URL (New)</th>
-                        <th className="py-3 px-4 font-semibold">Target Value</th>
-                        <th className="py-3 px-4 text-center font-semibold">Links</th>
-                        {onToggleDiscrepancyResolution && <th className="py-3 px-4 text-center font-semibold">Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800/30">
-                      {group.items.map((item) => (
-                        <React.Fragment key={item.id}>
-                        <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors ${item.isResolved ? 'opacity-50 bg-slate-50 dark:bg-slate-900/30' : ''}`}>
-                          <td className="py-3 px-4 text-center">
+            const isCritical = group.severity === 'CRITICAL';
+            const isHigh = group.severity === 'HIGH';
+            
+            const totalPages = Math.ceil(group.items.length / itemsPerPage);
+            const paginatedItems = group.items.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+            return (
+              <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+                <button 
+                  onClick={() => setExpandedGroup(null)}
+                  className="flex items-center text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors mb-2"
+                >
+                  <ArrowRight className="mr-2 h-4 w-4 rotate-180" /> Back to Overview
+                </button>
+
+                <div className={`overflow-hidden rounded-2xl border shadow-sm ${
+                  isCritical 
+                    ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-500/30' 
+                    : isHigh 
+                    ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-500/30'
+                    : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
+                }`}>
+                  <div className={`p-5 border-b ${
+                    isCritical ? 'border-red-200 dark:border-red-500/30 bg-red-100/50 dark:bg-red-950/40' : isHigh ? 'border-amber-200 dark:border-amber-500/30 bg-amber-100/50 dark:bg-amber-950/40' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center space-x-2.5">
+                        {isCritical ? (
+                          <AlertOctagon className="h-5 w-5 text-red-500 dark:text-red-400 shrink-0" />
+                        ) : isHigh ? (
+                          <AlertTriangle className="h-5 w-5 text-amber-500 dark:text-amber-400 shrink-0" />
+                        ) : (
+                          <Info className="h-5 w-5 text-teal-500 dark:text-teal-400 shrink-0" />
+                        )}
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{group.title}</h3>
+                        <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-950/50 px-2 py-0.5 rounded-md">
+                          {group.items.length} affected
+                        </span>
+                      </div>
+
+                      <span className={`text-[10px] font-mono uppercase font-bold px-2.5 py-0.5 rounded-full ${
+                        isCritical 
+                          ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30' 
+                          : isHigh
+                          ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent'
+                      }`}>
+                        {group.severity} SEVERITY
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 pl-8">{group.description}</p>
+                  </div>
+
+                  <div className="w-full overflow-x-auto">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-950/50 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800/50">
+                          <th className="py-3 px-4 font-semibold w-10 text-center">
                             <input 
                               type="checkbox" 
-                              checked={selectedItemIds.has(item.id)}
-                              onChange={() => handleToggleItem(item.id)}
+                              checked={paginatedItems.length > 0 && paginatedItems.every(i => selectedItemIds.has(i.id))}
+                              onChange={() => handleToggleSelectAll(paginatedItems)}
                               className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 cursor-pointer"
                             />
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex flex-col">
-                              <span className="text-slate-800 dark:text-slate-200 font-mono text-[10px] truncate max-w-[200px] xl:max-w-[300px]">
-                                {item.sourcePath}
+                          </th>
+                          <th className="py-3 px-4 font-semibold">Source URL (Old)</th>
+                          <th className="py-3 px-4 font-semibold">Source Value</th>
+                          <th className="py-3 px-4 font-semibold">Target URL (New)</th>
+                          <th className="py-3 px-4 font-semibold">Target Value</th>
+                          <th className="py-3 px-4 text-center font-semibold">Links</th>
+                          {onToggleDiscrepancyResolution && <th className="py-3 px-4 text-center font-semibold">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800/30">
+                        {paginatedItems.map((item) => (
+                          <React.Fragment key={item.id}>
+                          <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors ${item.isResolved ? 'opacity-50 bg-slate-50 dark:bg-slate-900/30' : ''}`}>
+                            <td className="py-3 px-4 text-center">
+                              <input 
+                                type="checkbox" 
+                                checked={selectedItemIds.has(item.id)}
+                                onChange={() => handleToggleItem(item.id)}
+                                className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                <span className="text-slate-800 dark:text-slate-200 font-mono text-[10px] truncate max-w-[200px] xl:max-w-[300px]">
+                                  {item.sourcePath}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`font-mono font-bold truncate max-w-[150px] inline-block ${isCritical ? 'text-red-600 dark:text-red-300/80' : isHigh ? 'text-amber-600 dark:text-amber-300/80' : 'text-slate-800 dark:text-slate-300/80'}`}>
+                                {String(item.sourceValue)}
                               </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`font-mono font-bold truncate max-w-[150px] inline-block ${isCritical ? 'text-red-600 dark:text-red-300/80' : isHigh ? 'text-amber-600 dark:text-amber-300/80' : 'text-slate-800 dark:text-slate-300/80'}`}>
-                              {String(item.sourceValue)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex flex-col">
-                              <span className="text-slate-800 dark:text-slate-200 font-mono text-[10px] truncate max-w-[200px] xl:max-w-[300px]">
-                                {item.targetPath}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                {editingTargetId === item.mappingId ? (
+                                  <div className="flex items-center space-x-1">
+                                    <input
+                                      type="text"
+                                      value={editTargetInput}
+                                      onChange={(e) => setEditTargetInput(e.target.value)}
+                                      autoFocus
+                                      className="w-full min-w-[150px] px-2 py-1 text-[10px] font-mono rounded border border-brand-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                                    />
+                                    <button 
+                                      onClick={() => {
+                                        if (onUpdateMapping) {
+                                          onUpdateMapping(item.mappingId, { targetUrl: editTargetInput });
+                                        }
+                                        setEditingTargetId(null);
+                                      }}
+                                      className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors"
+                                      title="Save Target URL"
+                                    >
+                                      <CheckCircle2 className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button 
+                                      onClick={() => setEditingTargetId(null)}
+                                      className="p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                                      title="Cancel"
+                                    >
+                                      <XCircle className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center space-x-2 group/edit">
+                                    <span className="text-slate-800 dark:text-slate-200 font-mono text-[10px] truncate max-w-[200px] xl:max-w-[300px]">
+                                      {item.targetPath}
+                                    </span>
+                                    {onUpdateMapping && (
+                                      <button
+                                        onClick={() => {
+                                          setEditingTargetId(item.mappingId);
+                                          setEditTargetInput(item.targetPath);
+                                        }}
+                                        className="opacity-50 hover:opacity-100 p-1 text-slate-400 hover:text-brand-500 transition-all shrink-0"
+                                        title="Edit Target URL"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`font-mono font-bold truncate max-w-[150px] inline-block ${isCritical ? 'text-red-600 dark:text-red-300/80' : isHigh ? 'text-amber-600 dark:text-amber-300/80' : 'text-slate-800 dark:text-slate-300/80'}`}>
+                                {String(item.targetValue)}
                               </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`font-mono font-bold truncate max-w-[150px] inline-block ${isCritical ? 'text-red-600 dark:text-red-300/80' : isHigh ? 'text-amber-600 dark:text-amber-300/80' : 'text-slate-800 dark:text-slate-300/80'}`}>
-                              {String(item.targetValue)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center space-x-1.5">
-                              <a 
-                                href={item.sourceUrl} 
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"
-                                title="Open Source URL"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                <span className="sr-only">Source</span>
-                              </a>
-                              {item.targetUrl && (
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center space-x-1.5">
                                 <a 
-                                  href={item.targetUrl} 
+                                  href={item.sourceUrl} 
                                   target="_blank" 
                                   rel="noreferrer"
-                                  className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/20 hover:bg-brand-100 dark:hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 transition-colors"
-                                  title="Open Target URL"
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"
+                                  title="Open Source URL"
                                 >
                                   <ExternalLink className="h-3 w-3" />
-                                  <span className="sr-only">Target</span>
+                                  <span className="sr-only">Source</span>
                                 </a>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex flex-col gap-1 items-center">
-                              {onToggleDiscrepancyResolution && (
-                                <button
-                                  onClick={() => onToggleDiscrepancyResolution(item.id)}
-                                  className={`flex items-center justify-center gap-1 mx-auto px-2 py-1 text-[10px] font-bold uppercase rounded-md transition-colors ${item.isResolved ? 'bg-slate-200 text-slate-500 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:hover:bg-emerald-500/20'}`}
-                                  title={item.isResolved ? "Unresolve" : "Mark as Resolved"}
-                                >
-                                  {item.isResolved ? <XCircle size={12} /> : <CheckCircle size={12} />}
-                                  {item.isResolved ? 'Undo' : 'Resolve'}
-                                </button>
-                              )}
-                              
-                              {onUpdateMapping && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <button
-                                    onClick={() => onUpdateMapping(item.mappingId, { status: 'APPROVED' })}
-                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
-                                    title="Approve Mapping"
+                                {item.targetUrl && (
+                                  <a 
+                                    href={item.targetUrl} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-brand-50 dark:bg-brand-500/10 border border-brand-200 dark:border-brand-500/20 hover:bg-brand-100 dark:hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 transition-colors"
+                                    title="Open Target URL"
                                   >
-                                    <CheckCircle2 className="h-3 w-3" />
-                                  </button>
+                                    <ExternalLink className="h-3 w-3" />
+                                    <span className="sr-only">Target</span>
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex flex-col gap-1 items-center">
+                                {onToggleDiscrepancyResolution && (
                                   <button
-                                    onClick={() => onUpdateMapping(item.mappingId, { status: 'GONE_410' })}
-                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
-                                    title="Mark as 410 Gone"
+                                    onClick={() => onToggleDiscrepancyResolution(item.id)}
+                                    className={`flex items-center justify-center gap-1 mx-auto px-2 py-1 text-[10px] font-bold uppercase rounded-md transition-colors ${item.isResolved ? 'bg-slate-200 text-slate-500 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:hover:bg-emerald-500/20'}`}
+                                    title={item.isResolved ? "Unresolve" : "Mark as Resolved"}
                                   >
-                                    <Ban className="h-3 w-3" />
+                                    {item.isResolved ? <XCircle size={12} /> : <CheckCircle size={12} />}
+                                    {item.isResolved ? 'Undo' : 'Resolve'}
                                   </button>
-                                  <button
-                                    onClick={() => {
-                                      if (editingNoteId === item.mappingId) {
-                                        setEditingNoteId(null);
-                                      } else {
-                                        setEditingNoteId(item.mappingId);
-                                        const mapping = mappings.find(m => m.id === item.mappingId);
-                                        setNoteInput(mapping?.notes || '');
-                                      }
-                                    }}
-                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
-                                    title="Add Note"
-                                  >
-                                    <MessageSquare className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                        {editingNoteId === item.mappingId && (
-                          <tr className="bg-slate-50 dark:bg-slate-900/30">
-                            <td colSpan={7} className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={noteInput}
-                                  onChange={(e) => setNoteInput(e.target.value)}
-                                  placeholder="Add a note to this mapping..."
-                                  className="flex-1 px-3 py-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && onUpdateMapping) {
-                                      onUpdateMapping(item.mappingId, { notes: noteInput });
-                                      setEditingNoteId(null);
-                                    } else if (e.key === 'Escape') {
-                                      setEditingNoteId(null);
-                                    }
-                                  }}
-                                />
-                                <button
-                                  onClick={() => {
-                                    if (onUpdateMapping) {
-                                      onUpdateMapping(item.mappingId, { notes: noteInput });
-                                      setEditingNoteId(null);
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 rounded bg-brand-500 text-white text-xs font-semibold hover:bg-brand-600"
-                                >
-                                  Save Note
-                                </button>
-                                <button
-                                  onClick={() => setEditingNoteId(null)}
-                                  className="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-300 dark:hover:bg-slate-700"
-                                >
-                                  Cancel
-                                </button>
+                                )}
+                                
+                                {onUpdateMapping && (
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <button
+                                      onClick={() => onUpdateMapping(item.mappingId, { status: 'APPROVED' })}
+                                      className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                                      title="Approve Mapping"
+                                    >
+                                      <CheckCircle2 className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => onUpdateMapping(item.mappingId, { status: 'GONE_410' })}
+                                      className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                                      title="Mark as 410 Gone"
+                                    >
+                                      <Ban className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (editingNoteId === item.mappingId) {
+                                          setEditingNoteId(null);
+                                        } else {
+                                          setEditingNoteId(item.mappingId);
+                                          const mapping = mappings.find(m => m.id === item.mappingId);
+                                          setNoteInput(mapping?.notes || '');
+                                        }
+                                      }}
+                                      className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
+                                      title="Add Note"
+                                    >
+                                      <MessageSquare className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                    </tbody>
-                  </table>
+                          {editingNoteId === item.mappingId && (
+                            <tr className="bg-slate-50 dark:bg-slate-900/30">
+                              <td colSpan={7} className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={noteInput}
+                                    onChange={(e) => setNoteInput(e.target.value)}
+                                    placeholder="Add a note to this mapping..."
+                                    className="flex-1 px-3 py-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && onUpdateMapping) {
+                                        onUpdateMapping(item.mappingId, { notes: noteInput });
+                                        setEditingNoteId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingNoteId(null);
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      if (onUpdateMapping) {
+                                        onUpdateMapping(item.mappingId, { notes: noteInput });
+                                        setEditingNoteId(null);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 rounded bg-brand-500 text-white text-xs font-semibold hover:bg-brand-600"
+                                  >
+                                    Save Note
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingNoteId(null)}
+                                    className="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-300 dark:hover:bg-slate-700"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+
+                {/* Pagination Controls for this group */}
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Showing <span className="font-bold text-slate-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(currentPage * itemsPerPage, group.items.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{group.items.length}</span> issues
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs font-mono text-slate-600 dark:text-slate-400 px-2">
+                        Page {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
-          })
+          })()
         )}
       </div>
-
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Showing <span className="font-bold text-slate-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(currentPage * itemsPerPage, filteredDiscrepancies.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredDiscrepancies.length}</span> issues
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
-            >
-              Previous
-            </button>
-            <span className="text-xs font-mono text-slate-600 dark:text-slate-400 px-2">
-              Page {currentPage} / {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+

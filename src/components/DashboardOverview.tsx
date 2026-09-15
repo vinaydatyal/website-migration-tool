@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { MigrationSummaryStats, UrlMapping, DiscrepancySeverity, ParityDiscrepancy, MigrationSnapshot } from '../types/migration';
 import { MappingStatusChart } from './MappingStatusChart';
 import { ProgressChart } from './ProgressChart';
-import { GscIntegration } from './GscIntegration';
+import { GoogleIntegrations } from './GoogleIntegrations';
 import { SeoInsightsPanel } from './SeoInsightsPanel';
 
 interface DashboardOverviewProps {
@@ -32,7 +32,7 @@ interface DashboardOverviewProps {
   onOpenExport: () => void;
   onUpdateTargetData: () => void;
   onSwapDomain: () => void;
-  onMergeGscData: (data: any[]) => void;
+  onMergeGscData: (gscData: any[], ga4Data: any[]) => void;
   isGscConnected: boolean;
   onGscConnected: () => void;
   snapshots: MigrationSnapshot[];
@@ -415,9 +415,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       {/* GSC Integration & Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
-        <div className="lg:col-span-8">
-          <GscIntegration
-            onDataFetched={onMergeGscData}
+          <div className="lg:col-span-8">
+            <GoogleIntegrations 
+              onDataFetched={onMergeGscData}
             isConnected={isGscConnected}
             onConnected={onGscConnected}
           />

@@ -119,13 +119,13 @@ export const UrlMappingTableRow = React.memo(({
             <span className="font-semibold text-slate-600 dark:text-slate-300">Title:</span> {m.source.title}
           </div>
         )}
-        {(m.source.h1 || m.source.h2 || (m.source.wordCount !== undefined && m.source.wordCount > 0)) && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-            {m.source.h1 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h1}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.source.h1}</div>}
-            {m.source.h2 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h2}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.source.h2}</div>}
-            {m.source.wordCount !== undefined && m.source.wordCount > 0 && <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{m.source.wordCount.toLocaleString()} words</div>}
-          </div>
-        )}
+        
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+          <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h1 || 'Missing'}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.source.h1 || <span className="text-slate-400/50 italic">N/A</span>}</div>
+          <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h2 || 'Missing'}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.source.h2 || <span className="text-slate-400/50 italic">N/A</span>}</div>
+          <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{(m.source.wordCount !== undefined && m.source.wordCount !== null) ? m.source.wordCount.toLocaleString() : '0'} words</div>
+        </div>
+
         <div className="text-[10px] text-slate-500 font-mono truncate mt-1">
           {m.source.url}
         </div>
@@ -250,11 +250,11 @@ export const UrlMappingTableRow = React.memo(({
                   </div>
                 )}
                 
-                {m.target && (m.target.h1 || m.target.h2 || (m.target.wordCount !== undefined && m.target.wordCount > 0)) && (
+                {m.target && (
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                    {m.target.h1 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h1}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.target.h1}</div>}
-                    {m.target.h2 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h2}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.target.h2}</div>}
-                    {m.target.wordCount !== undefined && m.target.wordCount > 0 && <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{m.target.wordCount.toLocaleString()} words</div>}
+                    <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h1 || 'Missing'}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.target.h1 || <span className="text-slate-400/50 italic">N/A</span>}</div>
+                    <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h2 || 'Missing'}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.target.h2 || <span className="text-slate-400/50 italic">N/A</span>}</div>
+                    <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{(m.target.wordCount !== undefined && m.target.wordCount !== null) ? m.target.wordCount.toLocaleString() : '0'} words</div>
                   </div>
                 )}
                 
@@ -313,21 +313,20 @@ export const UrlMappingTableRow = React.memo(({
         )}
       </div>
 
-      <div className="py-1 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-32 shrink-0 flex flex-row md:flex-col items-center md:items-start space-x-4 md:space-x-0 md:space-y-1">
-        {(m.source.visits !== undefined && m.source.visits > 0) ? (
-          <div className="text-[11px] text-slate-700 dark:text-slate-300 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full">
-            <span className="text-slate-500 md:hidden">Clicks:</span>
-            <span className="font-bold md:text-right text-slate-600 dark:text-slate-400">{m.source.visits.toLocaleString()}</span>
-          </div>
-        ) : (
+      <div className="py-1 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-32 shrink-0 flex flex-col items-start space-y-1">
+        {(!m.source.clicks && !m.source.sessions) ? (
           <div className="text-[11px] text-slate-400 dark:text-slate-600 font-mono">No data</div>
-        )}
-        
-        {(m.source.revenue !== undefined && m.source.revenue > 0) && (
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full mt-0.5">
-            <span className="text-emerald-500/70 md:hidden">Impr:</span>
-            <span className="font-bold md:text-right">{m.source.revenue.toLocaleString()}</span>
-          </div>
+        ) : (
+          <>
+            <div className="text-[11px] text-slate-700 dark:text-slate-300 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full" title="Google Search Console Clicks">
+              <span className="text-slate-500 md:hidden">Clicks:</span>
+              <span className="font-bold md:text-right text-slate-600 dark:text-slate-400">{(m.source.clicks || 0).toLocaleString()}</span>
+            </div>
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center justify-between md:justify-end md:space-x-4 w-full mt-0.5" title="Google Analytics Sessions">
+              <span className="text-emerald-500/70 md:hidden">Sessions:</span>
+              <span className="font-bold md:text-right">{(m.source.sessions || 0).toLocaleString()}</span>
+            </div>
+          </>
         )}
       </div>
 
