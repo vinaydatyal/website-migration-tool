@@ -251,7 +251,17 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
   }, [onUpdateMapping]);
 
   const handleSaveCustomTarget = useCallback((id: string, newTarget: string) => {
-    if (!newTarget.trim()) return;
+    if (!newTarget.trim()) {
+      onUpdateMapping(id, {
+        targetUrl: '',
+        target: null,
+        status: 'NEEDS_REVIEW',
+        strategy: 'MANUAL_OVERRIDE',
+        confidenceScore: 0
+      });
+      setEditingMappingId(null);
+      return;
+    }
     
     // Check if input matches an existing target entry
     const matchedTarget = targetEntries.find(t => 

@@ -275,7 +275,17 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                             <button 
                               onClick={() => {
                                 if (onUpdateMapping) {
-                                  onUpdateMapping(file.id, { targetUrl: targetInput });
+                                  if (!targetInput.trim()) {
+                                    onUpdateMapping(file.id, {
+                                      targetUrl: '',
+                                      target: null,
+                                      status: 'NEEDS_REVIEW',
+                                      strategy: 'MANUAL_OVERRIDE',
+                                      confidenceScore: 0
+                                    });
+                                  } else {
+                                    onUpdateMapping(file.id, { targetUrl: targetInput });
+                                  }
                                 }
                                 setEditingTargetId(null);
                               }}
@@ -283,6 +293,24 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                               title="Save Target URL"
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (onUpdateMapping) {
+                                  onUpdateMapping(file.id, {
+                                    targetUrl: '',
+                                    target: null,
+                                    status: 'NEEDS_REVIEW',
+                                    strategy: 'MANUAL_OVERRIDE',
+                                    confidenceScore: 0
+                                  });
+                                }
+                                setEditingTargetId(null);
+                              }}
+                              className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors"
+                              title="Leave Blank (Unmapped)"
+                            >
+                              <Ban className="h-3.5 w-3.5" />
                             </button>
                             <button 
                               onClick={() => setEditingTargetId(null)}

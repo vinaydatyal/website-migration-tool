@@ -151,6 +151,13 @@ export const UrlMappingTableRow = React.memo(({
                 <Check className="h-4 w-4" />
               </button>
               <button
+                onClick={() => onSaveCustomTarget(m.id, '')}
+                className="p-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+                title="Leave Blank (Unmapped)"
+              >
+                <Ban className="h-4 w-4" />
+              </button>
+              <button
                 onClick={onCancelEdit}
                 className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"
                 title="Cancel"
