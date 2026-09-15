@@ -86,6 +86,14 @@ export const SharedDashboard: React.FC = () => {
           isReadOnly={true}
         />
         
+        <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Pre vs. Post SEO Parity Inspector</h3>
+          <SeoParityView 
+            mappings={project.mappings} 
+            resolvedDiscrepancies={project.resolvedDiscrepancies || {}}
+          />
+        </div>
+
         <div className="pt-8 border-t border-slate-200 dark:border-slate-800 print:hidden">
           <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">URL Mappings Overview</h3>
           <UrlMappingTable
@@ -96,13 +104,6 @@ export const SharedDashboard: React.FC = () => {
             onBulkUpdateMappings={() => {}}
             confidenceThreshold={80}
             onUpdateThreshold={() => {}}
-          />
-        </div>
-
-        <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
-          <SeoParityView 
-            mappings={project.mappings} 
-            resolvedDiscrepancies={project.resolvedDiscrepancies || {}}
           />
         </div>
       </div>

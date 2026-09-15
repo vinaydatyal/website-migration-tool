@@ -76,10 +76,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const criticalIssues = mappings
           .flatMap(m => m.discrepancies.map(d => ({...d, sourceUrl: m.source.url, targetUrl: m.target?.url})))
           .filter(d => d.severity === 'CRITICAL' || d.severity === 'HIGH');
+        const pdfMappings = mappings.map(m => ({
+          source: m.source.url,
+          target: m.target?.url || m.targetUrl,
+          status: m.status
+        }));
         const res = await fetch('/api/generate-pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stats, projectMetadata, criticalIssues })
+          body: JSON.stringify({ stats, projectMetadata, criticalIssues, mappings: pdfMappings })
         });
         if (!res.ok) throw new Error('PDF Generation failed');
         const blob = await res.blob();
