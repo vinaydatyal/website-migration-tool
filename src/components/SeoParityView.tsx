@@ -45,6 +45,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   const [noteInput, setNoteInput] = useState<string>('');
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [editTargetInput, setEditTargetInput] = useState<string>('');
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   // Debounce filter inputs for performance
   React.useEffect(() => {
