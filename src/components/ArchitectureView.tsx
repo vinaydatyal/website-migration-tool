@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { CrawlEntry } from '../types/migration';
-import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown, CheckCircle2, Ban, MessageSquare, ExternalLink } from 'lucide-react';
+import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown, CheckCircle2, Ban, MessageSquare, ExternalLink, X } from 'lucide-react';
 
 interface ArchitectureViewProps {
   sourceEntries: CrawlEntry[];
@@ -281,13 +281,23 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                     )}
                     {onUpdateMapping && (
                       <>
-                        <button
-                          onClick={() => onUpdateMapping(file.id, { status: 'APPROVED' })}
-                          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
-                          title="Approve"
-                        >
-                          <CheckCircle2 className="h-3 w-3" />
-                        </button>
+                        {file.status === 'APPROVED' ? (
+                          <button
+                            onClick={() => onUpdateMapping(file.id, { status: 'NEEDS_REVIEW' })}
+                            className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                            title="Disapprove"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onUpdateMapping(file.id, { status: 'APPROVED' })}
+                            className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                            title="Approve"
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                          </button>
+                        )}
                         <button
                           onClick={() => onUpdateMapping(file.id, { status: 'GONE_410' })}
                           className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"

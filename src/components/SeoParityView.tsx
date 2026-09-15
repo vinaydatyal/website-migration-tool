@@ -13,7 +13,8 @@ import {
   CheckCircle,
   XCircle,
   Ban,
-  MessageSquare
+  MessageSquare,
+  X
 } from 'lucide-react';
 import { UrlMapping, DiscrepancySeverity, ParityDiscrepancy } from '../types/migration';
 import { FilterBuilder, FilterCondition } from './FilterBuilder';
@@ -76,6 +77,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
     m.discrepancies.map(d => ({
       ...d,
       mappingId: m.id,
+      mappingStatus: m.status,
       sourceUrl: m.source.url,
       sourcePath: m.source.normalizedPath,
       targetUrl: m.target ? m.target.url : m.targetUrl,
@@ -602,13 +604,23 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                                 
                                 {onUpdateMapping && (
                                   <div className="flex items-center gap-1 mt-1">
-                                    <button
-                                      onClick={() => onUpdateMapping(item.mappingId, { status: 'APPROVED' })}
-                                      className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
-                                      title="Approve Mapping"
-                                    >
-                                      <CheckCircle2 className="h-3 w-3" />
-                                    </button>
+                                    {item.mappingStatus === 'APPROVED' ? (
+                                      <button
+                                        onClick={() => onUpdateMapping(item.mappingId, { status: 'NEEDS_REVIEW' })}
+                                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                                        title="Disapprove Mapping"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => onUpdateMapping(item.mappingId, { status: 'APPROVED' })}
+                                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                                        title="Approve Mapping"
+                                      >
+                                        <CheckCircle2 className="h-3 w-3" />
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => onUpdateMapping(item.mappingId, { status: 'GONE_410' })}
                                       className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors"
