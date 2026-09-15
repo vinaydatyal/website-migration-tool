@@ -915,6 +915,7 @@ export function App() {
               <Route path="/:projectSlug/parity" element={
                 <SeoParityView 
                   mappings={mappings} 
+                  targetEntries={targetEntries || []}
                   resolvedDiscrepancies={resolvedDiscrepancies}
                   onToggleDiscrepancyResolution={handleToggleDiscrepancyResolution}
                   onUpdateMapping={handleUpdateMapping}
@@ -994,6 +995,7 @@ export function App() {
           <div className="hidden print:block print:mt-16 w-full">
             <SeoParityView 
               mappings={mappings} 
+              targetEntries={targetEntries || []}
               resolvedDiscrepancies={resolvedDiscrepancies}
               onToggleDiscrepancyResolution={handleToggleDiscrepancyResolution}
             />

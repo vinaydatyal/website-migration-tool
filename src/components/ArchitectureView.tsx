@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { CrawlEntry } from '../types/migration';
-import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown, CheckCircle2, Ban, MessageSquare, ExternalLink, X } from 'lucide-react';
+import { Network, Folder, FolderOpen, FileText, AlertTriangle, ArrowRight, ChevronRight, ChevronDown, CheckCircle2, Ban, MessageSquare, ExternalLink, X, Edit2 } from 'lucide-react';
 
 interface ArchitectureViewProps {
   sourceEntries: CrawlEntry[];
@@ -23,6 +23,17 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
   const [folderPages, setFolderPages] = useState<Record<string, number>>({});
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState<string>('');
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const [targetInput, setTargetInput] = useState<string>('');
+
+  const suggestedTargets = React.useMemo(() => {
+    if (!editingTargetId || targetInput.length < 2) return [];
+    const q = targetInput.toLowerCase();
+    return targetEntries.filter(t => 
+      t.normalizedPath.toLowerCase().includes(q) || 
+      (t.title?.toLowerCase().includes(q))
+    ).slice(0, 15);
+  }, [editingTargetId, targetInput, targetEntries]);
   
   const PAGE_SIZE = 50;
 
@@ -248,11 +259,66 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
 
                 <div className="w-1/3 min-w-0 text-xs flex flex-col mt-0.5">
                   <div className="flex items-start">
-                    <ArrowRight className="h-3.5 w-3.5 text-brand-500/50 mr-2 shrink-0" />
+                    <ArrowRight className="h-3.5 w-3.5 text-brand-500/50 mr-2 shrink-0 mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className={`truncate ${file.status === 'GONE_410' ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}`}>
-                        {file.status === 'GONE_410' ? '410 GONE' : (file.target ? file.target.normalizedPath : file.targetUrl || 'Unmapped')}
-                      </div>
+                      {editingTargetId === file.id ? (
+                        <div className="flex flex-col relative w-full min-w-[200px]">
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="text"
+                              value={targetInput}
+                              onChange={(e) => setTargetInput(e.target.value)}
+                              autoFocus
+                              placeholder="Search targets..."
+                              className="w-full min-w-[150px] px-2 py-1 text-[10px] font-mono rounded border border-brand-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                            />
+                            <button 
+                              onClick={() => {
+                                if (onUpdateMapping) {
+                                  onUpdateMapping(file.id, { targetUrl: targetInput });
+                                }
+                                setEditingTargetId(null);
+                              }}
+                              className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors"
+                              title="Save Target URL"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => setEditingTargetId(null)}
+                              className="p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                              title="Cancel"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {suggestedTargets.length > 0 && (
+                            <div className="absolute top-full left-0 z-50 w-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg max-h-48 overflow-y-auto shadow-xl">
+                              {suggestedTargets.map(t => (
+                                <div
+                                  key={t.id}
+                                  onClick={() => {
+                                    if (onUpdateMapping) {
+                                      onUpdateMapping(file.id, { targetUrl: t.url });
+                                    }
+                                    setEditingTargetId(null);
+                                  }}
+                                  className="group flex items-center justify-between px-3 py-2 border-b last:border-0 border-slate-100 dark:border-slate-800 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer transition-colors"
+                                >
+                                  <div className="flex-1 min-w-0 pr-2">
+                                    <div className="font-mono text-emerald-600 dark:text-emerald-300 font-bold text-[11px] truncate">{t.normalizedPath}</div>
+                                    {t.title && <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{t.title}</div>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className={`truncate ${file.status === 'GONE_410' ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}`}>
+                          {file.status === 'GONE_410' ? '410 GONE' : (file.target ? file.target.normalizedPath : file.targetUrl || 'Unmapped')}
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -281,6 +347,16 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                     )}
                     {onUpdateMapping && (
                       <>
+                        <button
+                          onClick={() => {
+                            setEditingTargetId(file.id);
+                            setTargetInput(file.target?.url || file.targetUrl || '');
+                          }}
+                          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
+                          title="Edit Target URL"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </button>
                         {file.status === 'APPROVED' ? (
                           <button
                             onClick={() => onUpdateMapping(file.id, { status: 'NEEDS_REVIEW' })}

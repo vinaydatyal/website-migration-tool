@@ -22,6 +22,7 @@ import { exportDiscrepanciesToCsv } from '../utils/exporters';
 
 interface SeoParityViewProps {
   mappings: UrlMapping[];
+  targetEntries?: CrawlEntry[];
   resolvedDiscrepancies?: Record<string, boolean>;
   onToggleDiscrepancyResolution?: (id: string) => void;
   onUpdateMapping?: (id: string, updates: Partial<UrlMapping>) => void;
@@ -30,6 +31,7 @@ interface SeoParityViewProps {
 
 export const SeoParityView: React.FC<SeoParityViewProps> = ({ 
   mappings, 
+  targetEntries = [],
   resolvedDiscrepancies = {}, 
   onToggleDiscrepancyResolution,
   onUpdateMapping,
@@ -46,6 +48,15 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   const [noteInput, setNoteInput] = useState<string>('');
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [editTargetInput, setEditTargetInput] = useState<string>('');
+
+  const suggestedTargets = React.useMemo(() => {
+    if (!editingTargetId || editTargetInput.length < 2) return [];
+    const q = editTargetInput.toLowerCase();
+    return targetEntries.filter(t => 
+      t.normalizedPath.toLowerCase().includes(q) || 
+      (t.title?.toLowerCase().includes(q))
+    ).slice(0, 15);
+  }, [editingTargetId, editTargetInput, targetEntries]);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   // Debounce filter inputs for performance
@@ -509,33 +520,62 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                             <td className="py-3 px-4">
                               <div className="flex flex-col">
                                 {editingTargetId === item.mappingId ? (
-                                  <div className="flex items-center space-x-1">
-                                    <input
-                                      type="text"
-                                      value={editTargetInput}
-                                      onChange={(e) => setEditTargetInput(e.target.value)}
-                                      autoFocus
-                                      className="w-full min-w-[150px] px-2 py-1 text-[10px] font-mono rounded border border-brand-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500/50"
-                                    />
-                                    <button 
-                                      onClick={() => {
-                                        if (onUpdateMapping) {
-                                          onUpdateMapping(item.mappingId, { targetUrl: editTargetInput });
-                                        }
-                                        setEditingTargetId(null);
-                                      }}
-                                      className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors"
-                                      title="Save Target URL"
-                                    >
-                                      <CheckCircle2 className="h-3.5 w-3.5" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setEditingTargetId(null)}
-                                      className="p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
-                                      title="Cancel"
-                                    >
-                                      <XCircle className="h-3.5 w-3.5" />
-                                    </button>
+                                  <div className="flex flex-col relative w-full min-w-[200px]">
+                                    <div className="flex items-center space-x-1">
+                                      <input
+                                        type="text"
+                                        value={editTargetInput}
+                                        onChange={(e) => setEditTargetInput(e.target.value)}
+                                        autoFocus
+                                        placeholder="Search targets..."
+                                        className="w-full min-w-[150px] px-2 py-1 text-[10px] font-mono rounded border border-brand-500/50 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                                      />
+                                      <button 
+                                        onClick={() => {
+                                          if (onUpdateMapping) {
+                                            onUpdateMapping(item.mappingId, { targetUrl: editTargetInput });
+                                          }
+                                          setEditingTargetId(null);
+                                        }}
+                                        className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors"
+                                        title="Save Target URL"
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => setEditingTargetId(null)}
+                                        className="p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                                        title="Cancel"
+                                      >
+                                        <XCircle className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                    {suggestedTargets.length > 0 && (
+                                      <div className="absolute top-full left-0 z-50 w-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg max-h-48 overflow-y-auto shadow-xl">
+                                        {suggestedTargets.map(t => (
+                                          <div
+                                            key={t.id}
+                                            onClick={() => {
+                                              if (onUpdateMapping) {
+                                                onUpdateMapping(item.mappingId, { targetUrl: t.url });
+                                              }
+                                              setEditingTargetId(null);
+                                            }}
+                                            className="group flex items-center justify-between px-3 py-2 border-b last:border-0 border-slate-100 dark:border-slate-800 hover:bg-brand-50 dark:hover:bg-brand-500/10 cursor-pointer transition-colors"
+                                          >
+                                            <div className="flex-1 min-w-0 pr-2">
+                                              <div className="font-mono text-emerald-600 dark:text-emerald-300 font-bold text-[11px] truncate">{t.normalizedPath}</div>
+                                              {t.title && <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{t.title}</div>}
+                                            </div>
+                                            {t.url && (
+                                              <a href={t.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 rounded text-slate-400 hover:text-brand-500 hover:bg-white dark:hover:bg-slate-900 transition-colors opacity-0 group-hover:opacity-100">
+                                                <ExternalLink className="h-3 w-3" />
+                                              </a>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="flex items-center space-x-2 group/edit">

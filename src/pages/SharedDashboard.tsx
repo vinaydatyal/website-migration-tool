@@ -90,6 +90,7 @@ export const SharedDashboard: React.FC = () => {
           <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Pre vs. Post SEO Parity Inspector</h3>
           <SeoParityView 
             mappings={project.mappings} 
+            targetEntries={project.targetEntries || []}
             resolvedDiscrepancies={project.resolvedDiscrepancies || {}}
           />
         </div>
