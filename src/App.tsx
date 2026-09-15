@@ -169,6 +169,8 @@ export function App() {
       const currentSlug = slugify(projectName);
       const parts = location.pathname.split('/');
       
+      if (parts[1] === 'login' || parts[1] === 'share') return;
+
       // If we are on the root URL, or on a different slug, redirect to the current project's dashboard
       if (!parts[1] || parts[1] !== currentSlug) {
         const view = parts[2] || 'dashboard';
