@@ -1044,8 +1044,8 @@ export function App() {
         <DataSourcesModal
           isOpen={isDataSourcesOpen}
           onClose={() => setIsDataSourcesOpen(false)}
-          isGscConnected={gscConnected}
-          isGa4Connected={ga4Connected}
+          isGscConnected={isGscConnected}
+          isGa4Connected={isGa4Connected}
           onDataParsed={(entries, type) => {
             if (type === 'source') {
               handleUpdateSourceData(entries);
