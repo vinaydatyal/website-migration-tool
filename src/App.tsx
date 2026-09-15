@@ -46,6 +46,9 @@ import {
   deleteSnapshot
 } from './utils/storage';
 import { SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE } from './data/sampleData';
+import { supabase } from './utils/supabaseClient';
+import { Auth } from './pages/Auth';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export function App() {
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
@@ -766,6 +769,7 @@ export function App() {
 
   return (
     <Routes>
+      <Route path="/login" element={<Auth />} />
       <Route path="/share/:id" element={
         <>
           <Toaster position="top-right" theme="dark" richColors />
@@ -773,101 +777,67 @@ export function App() {
         </>
       } />
       <Route path="*" element={
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300 transition-colors duration-200">
-          <Toaster position="top-right" theme="dark" richColors />
+        <ProtectedRoute>
+          <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-brand-500/20 selection:text-brand-300 transition-colors duration-200">
+            <Toaster position="top-right" theme="dark" richColors />
 
-          {/* Top Navigation */}
-          <Navbar 
-            stats={stats}
-        onLoadSample={handleLoadSample}
-        onReset={handleReset}
-        onRestartPipeline={() => setIsRestartModalOpen(true)}
-        onOpenExport={() => setIsExportOpen(true)}
-        onOpenImportMap={() => setIsImportMapOpen(true)}
-        onOpenHistory={async () => {
-          await loadSnapshots();
-          setIsHistoryOpen(true);
-        }}
-        onOpenProjectManager={() => setIsProjectManagerOpen(true)}
-        onOpenHelp={() => {
-          let context;
-          const view = location.pathname.split('/')[2] || 'dashboard';
-          if (view === 'parity') context = 'parity';
-          else if (view === 'regex') context = 'matching';
-          else if (view === 'data' || view === 'dashboard') context = 'workflow';
-          else if (view === 'architecture') context = 'process';
-          else if (view === 'validation') context = 'manual';
-          
-          setHelpContext(context);
-          setIsHelpOpen(true);
-        }}
-        onNewProject={handleReset}
-        hasData={hasData}
-        projectName={projectName}
-        setProjectName={setProjectName}
-        onSaveVersion={() => takeSnapshot('Manual Snapshot', mappings, stats!)}
-        onForceSave={handleForceSave}
-      />
+            {/* Top Navigation */}
+            <Navbar 
+              stats={stats}
+              onLoadSample={handleLoadSample}
+              onReset={handleReset}
+              onRestartPipeline={() => setIsRestartModalOpen(true)}
+              onOpenExport={() => setIsExportOpen(true)}
+              onOpenImportMap={() => setIsImportMapOpen(true)}
+              onOpenHistory={async () => {
+                await loadSnapshots();
+                setIsHistoryOpen(true);
+              }}
+              onOpenProjectManager={() => setIsProjectManagerOpen(true)}
+              onOpenHelp={() => {
+                let context;
+                const view = location.pathname.split('/')[2] || 'dashboard';
+                if (view === 'parity') context = 'parity';
+                else if (view === 'regex') context = 'matching';
+                else if (view === 'data' || view === 'dashboard') context = 'workflow';
+                else if (view === 'architecture') context = 'process';
+                else if (view === 'validation') context = 'manual';
+                
+                setHelpContext(context);
+                setIsHelpOpen(true);
+              }}
+              onNewProject={handleReset}
+              hasData={hasData}
+              projectName={projectName}
+              setProjectName={setProjectName}
+              onSaveVersion={() => takeSnapshot('Manual Snapshot', mappings, stats!)}
+              onForceSave={handleForceSave}
+            />
 
-      {/* Main Viewport */}
-      <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
-        {/* Loading / Restoring Overlay */}
-        {(isProcessing || isRestoring) && (
-          <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center">
-            <div className="w-96 p-6 rounded-2xl bg-slate-900 border border-brand-500/30 shadow-2xl space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-400"></div>
-                <h3 className="text-sm font-bold text-white">
-                  {isRestoring ? 'Restoring previous session...' : 'Analyzing & Matching URLs...'}
-                </h3>
-              </div>
-              {!isRestoring && (
-                <>
-                  <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-brand-500 transition-all duration-300"
-                      style={{ width: `${processProgress}%` }}
-                    />
+            {/* Main Viewport */}
+            <main className="flex-1 max-w-screen-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
+              {/* Loading / Restoring Overlay */}
+              {(isProcessing || isRestoring) && (
+                <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center">
+                  <div className="w-96 p-6 rounded-2xl bg-slate-900 border border-brand-500/30 shadow-2xl space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-400"></div>
+                      <h3 className="text-sm font-bold text-white">
+                        {isRestoring ? 'Restoring previous session...' : 'Analyzing & Matching URLs...'}
+                      </h3>
+                    </div>
+                    {!isRestoring && (
+                      <>
+                        <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-brand-500 transition-all duration-300"
+                            style={{ width: `${processProgress}%` }}
+                          />
+                        </div>
+                        <p className="text-xs font-mono text-slate-400 text-right">{processProgress}% complete</p>
+                      </>
+                    )}
                   </div>
-                  <p className="text-xs font-mono text-slate-400 text-right">{processProgress}% complete</p>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {(!hasData && !isRestoring) ? (
-          <UploadZone 
-            onDataParsed={handleDataParsed}
-            onLoadSample={handleLoadSample}
-            onSyncDraftData={(src, tgt) => {
-              setSourceEntries(src);
-              setTargetEntries(tgt);
-            }}
-            projectName={projectName}
-            setProjectName={setProjectName}
-          />
-        ) : (
-          <div className="space-y-6">
-            <Routes>
-              <Route path="/:projectSlug/dashboard" element={
-                stats && (
-                  <DashboardOverview
-                    stats={stats}
-                    mappings={mappings}
-                    onNavigateTab={(tab) => navigate(`/${slugify(projectName)}/${tab}`)}
-                    onOpenExport={() => setIsExportOpen(true)}
-                    onUpdateTargetData={() => setIsDataSourcesOpen(true)}
-                    onSwapDomain={() => setIsDomainSwapOpen(true)}
-                    onMergeGscData={handleMergeGscData}
-                    isGscConnected={isGscConnected}
-                    onGscConnected={() => setIsGscConnected(true)}
-                    snapshots={snapshots}
-                    projectId={projectId}
-                  />
-                )
-              } />
-
               <Route path="/:projectSlug/mapping" element={
                 <UrlMappingTable
                   mappings={mappings}
@@ -1059,7 +1029,8 @@ export function App() {
         activeContext={helpContext}
       />
 
-    </div>
+          </ProtectedRoute>
+        </div>
       } />
     </Routes>
   );

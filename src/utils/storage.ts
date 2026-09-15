@@ -12,6 +12,11 @@ const snapshotStore = localforage.createInstance({
   storeName: 'projectSnapshots'
 });
 
+async function getUserId() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user?.id;
+}
+
 import toast from 'react-hot-toast';
 
 export async function saveProjectToIndexedDB(project: MigrationProject): Promise<void> {
@@ -26,17 +31,21 @@ export async function saveProjectToIndexedDB(project: MigrationProject): Promise
     await projectStore.setItem(project.id, project);
 
     // 2. Sync to Supabase in the background
-    supabase
-      .from('migrationProjects')
-      .upsert({
-        id: project.id,
-        project_data: project,
-        updated_at: project.updatedAt
-      })
-      .then(({ error }) => {
-        if (error) console.warn('Supabase sync notice:', error.message);
-      })
-      .then(undefined, (e) => console.warn('Supabase connection notice:', e));
+    const userId = await getUserId();
+    if (userId) {
+      supabase
+        .from('migrationProjects')
+        .upsert({
+          id: project.id,
+          project_data: project,
+          updated_at: project.updatedAt,
+          user_id: userId
+        })
+        .then(({ error }) => {
+          if (error) console.warn('Supabase sync notice:', error.message);
+        })
+        .then(undefined, (e) => console.warn('Supabase connection notice:', e));
+    }
   } catch (error: any) {
     console.error('Failed to save project to IndexedDB:', error);
     toast.error(`Failed to save project data: ${error.message || 'Storage full or object too large'}`);
@@ -157,15 +166,19 @@ export async function saveSnapshot(projectId: string, snapshot: MigrationSnapsho
     await snapshotStore.setItem(snapshot.id, { ...snapshot, projectId });
 
     // 2. Sync to Supabase
-    supabase
-      .from('projectSnapshots')
-      .upsert({
-        id: snapshot.id,
-        project_id: projectId,
-        snapshot_data: snapshot,
-        created_at: snapshot.timestamp
-      })
-      .then(undefined, () => {});
+    const userId = await getUserId();
+    if (userId) {
+      supabase
+        .from('projectSnapshots')
+        .upsert({
+          id: snapshot.id,
+          project_id: projectId,
+          snapshot_data: snapshot,
+          created_at: snapshot.timestamp,
+          user_id: userId
+        })
+        .then(undefined, () => {});
+    }
   } catch (error) {
     console.error('Failed to save snapshot:', error);
   }

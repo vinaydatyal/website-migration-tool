@@ -115,11 +115,18 @@ export const UrlMappingTableRow = React.memo(({
           </span>
         </div>
         {m.source.title && (
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
-            {m.source.title}
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-1">
+            <span className="font-semibold text-slate-600 dark:text-slate-300">Title:</span> {m.source.title}
           </div>
         )}
-        <div className="text-[10px] text-slate-500 font-mono truncate">
+        {(m.source.h1 || m.source.h2 || (m.source.wordCount !== undefined && m.source.wordCount > 0)) && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+            {m.source.h1 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h1}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.source.h1}</div>}
+            {m.source.h2 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.source.h2}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.source.h2}</div>}
+            {m.source.wordCount !== undefined && m.source.wordCount > 0 && <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{m.source.wordCount.toLocaleString()} words</div>}
+          </div>
+        )}
+        <div className="text-[10px] text-slate-500 font-mono truncate mt-1">
           {m.source.url}
         </div>
       </div>
@@ -239,7 +246,15 @@ export const UrlMappingTableRow = React.memo(({
                 
                 {m.target?.title && (
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-1">
-                    {m.target.title}
+                    <span className="font-semibold text-slate-600 dark:text-slate-300">Title:</span> {m.target.title}
+                  </div>
+                )}
+                
+                {m.target && (m.target.h1 || m.target.h2 || (m.target.wordCount !== undefined && m.target.wordCount > 0)) && (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                    {m.target.h1 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h1}><strong className="text-slate-400 dark:text-slate-500">H1:</strong> {m.target.h1}</div>}
+                    {m.target.h2 && <div className="line-clamp-1 flex-1 min-w-[120px]" title={m.target.h2}><strong className="text-slate-400 dark:text-slate-500">H2:</strong> {m.target.h2}</div>}
+                    {m.target.wordCount !== undefined && m.target.wordCount > 0 && <div className="shrink-0 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">{m.target.wordCount.toLocaleString()} words</div>}
                   </div>
                 )}
                 

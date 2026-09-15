@@ -9,6 +9,7 @@ import { crawlSite } from './crawler.js';
 import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
+import { verifyAuth } from './authMiddleware.js';
 
 const app = express();
 app.use(cors());
@@ -18,7 +19,7 @@ const generateId = () => Math.random().toString(36).substring(2, 15);
 
 const activeJobs = new Map();
 
-app.post('/api/crawl', async (req, res) => {
+app.post('/api/crawl', verifyAuth, async (req, res) => {
   const { url, config } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -79,7 +80,7 @@ async function runCrawlJob(jobId, url, config, initialState = null) {
   }
 }
 
-app.post('/api/crawl/pause', (req, res) => {
+app.post('/api/crawl/pause', verifyAuth, (req, res) => {
   const { jobId } = req.body;
   if (!jobId || !activeJobs.has(jobId)) {
     return res.status(404).json({ error: 'Job not found' });
@@ -89,7 +90,7 @@ app.post('/api/crawl/pause', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/crawl/resume', (req, res) => {
+app.post('/api/crawl/resume', verifyAuth, (req, res) => {
   const { jobId } = req.body;
   if (!jobId || !activeJobs.has(jobId)) {
     return res.status(404).json({ error: 'Job not found' });
@@ -104,7 +105,7 @@ app.post('/api/crawl/resume', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/crawl/stop', (req, res) => {
+app.post('/api/crawl/stop', verifyAuth, (req, res) => {
   const { jobId } = req.body;
   if (!jobId || !activeJobs.has(jobId)) {
     return res.status(404).json({ error: 'Job not found' });
@@ -116,7 +117,7 @@ app.post('/api/crawl/stop', (req, res) => {
 
 // PDF generation endpoint removed in favor of client-side window.print()
 
-app.get('/api/crawl/events', (req, res) => {
+app.get('/api/crawl/events', verifyAuth, (req, res) => {
   const jobId = req.query.jobId;
   if (!jobId || !activeJobs.has(jobId)) {
     return res.status(404).json({ error: 'Job not found' });
@@ -162,7 +163,7 @@ app.get('/api/crawl/events', (req, res) => {
   });
 });
 
-app.post('/api/validate-redirects', async (req, res) => {
+app.post('/api/validate-redirects', verifyAuth, async (req, res) => {
   const { mappings } = req.body;
   if (!mappings || !Array.isArray(mappings)) {
     return res.status(400).json({ error: 'Mappings array is required' });
@@ -193,7 +194,7 @@ app.post('/api/validate-redirects', async (req, res) => {
   }
 });
 
-app.get('/api/ping-url', async (req, res) => {
+app.get('/api/ping-url', verifyAuth, async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
@@ -215,15 +216,15 @@ app.get('/api/ping-url', async (req, res) => {
 // --- Google Search Console Endpoints ---
 app.get('/api/gsc/auth', generateAuthUrl); // We'll keep the name or could rename to /api/auth/google
 app.get('/api/auth/google/callback', handleAuthCallback);
-app.post('/api/gsc/data', fetchGscData);
-app.get('/api/gsc/sites', fetchGscSites);
+app.post('/api/gsc/data', verifyAuth, fetchGscData);
+app.get('/api/gsc/sites', verifyAuth, fetchGscSites);
 
 // --- Google Analytics 4 Endpoints ---
-app.get('/api/ga4/properties', fetchGa4Properties);
-app.post('/api/ga4/data', fetchGa4Data);
+app.get('/api/ga4/properties', verifyAuth, fetchGa4Properties);
+app.post('/api/ga4/data', verifyAuth, fetchGa4Data);
 
 // --- Infrastructure Endpoints ---
-app.get('/api/check-dns-ssl', async (req, res) => {
+app.get('/api/check-dns-ssl', verifyAuth, async (req, res) => {
   const { domain } = req.query;
   if (!domain) return res.status(400).json({ error: 'Domain is required' });
   try {
@@ -234,7 +235,7 @@ app.get('/api/check-dns-ssl', async (req, res) => {
   }
 });
 
-app.get('/api/check-robots', async (req, res) => {
+app.get('/api/check-robots', verifyAuth, async (req, res) => {
   const { domain } = req.query;
   if (!domain) return res.status(400).json({ error: 'Domain is required' });
   try {
@@ -245,7 +246,7 @@ app.get('/api/check-robots', async (req, res) => {
   }
 });
 
-app.get('/api/check-sitemap', async (req, res) => {
+app.get('/api/check-sitemap', verifyAuth, async (req, res) => {
   const { domain } = req.query;
   if (!domain) return res.status(400).json({ error: 'Domain is required' });
   try {
@@ -257,7 +258,7 @@ app.get('/api/check-sitemap', async (req, res) => {
 });
 
 // --- PDF Generation Endpoint ---
-app.post('/api/generate-pdf', async (req, res) => {
+app.post('/api/generate-pdf', verifyAuth, async (req, res) => {
   try {
     const pdfBuffer = await generatePdfReport(req.body);
     res.setHeader('Content-Type', 'application/pdf');
