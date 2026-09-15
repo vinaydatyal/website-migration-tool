@@ -31,9 +31,18 @@ export const Auth: React.FC = () => {
         if (error) throw error;
         navigate((location.state as any)?.from?.pathname || '/');
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        toast.success('Registration successful! Please check your email to verify.');
+        
+        if (data?.user) {
+          fetch('/api/admin/request-approval', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, userId: data.user.id })
+          }).catch(console.error);
+        }
+
+        toast.success('Registration successful! Waiting for admin approval.');
       }
     } catch (error: any) {
       toast.error(error.message || 'Authentication failed');

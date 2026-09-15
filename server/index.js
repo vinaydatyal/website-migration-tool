@@ -11,10 +11,13 @@ import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetch
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
 import { verifyAuth } from './authMiddleware.js';
 import { generatePdfReport } from './pdf.js';
+import adminRoutes from './admin.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/admin', adminRoutes);
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 

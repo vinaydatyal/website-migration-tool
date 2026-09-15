@@ -28,6 +28,7 @@
     "jsonwebtoken": "^9.0.3",
     "localforage": "^1.10.0",
     "lucide-react": "^1.23.0",
+    "nodemailer": "^10.0.10",
     "papaparse": "^5.4.1",
     "puppeteer": "^25.11.0",
     "react": "^19.0.0",
