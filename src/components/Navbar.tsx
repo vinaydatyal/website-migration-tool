@@ -14,12 +14,16 @@ import {
   Moon,
   HelpCircle,
   Database,
-  Server
+  Server,
+  User,
+  LogOut
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { slugify } from '../utils/text';
 import { MigrationSummaryStats } from '../types/migration';
 import { useTheme } from '../contexts/ThemeContext';
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
 
 interface NavbarProps {
   stats: MigrationSummaryStats | null;
@@ -64,6 +68,29 @@ export const Navbar: React.FC<NavbarProps> = ({
       nameInputRef.current.focus();
     }
   }, [isEditingName]);
+
+  const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
+  const userMenuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Error logging out:', error);
+      window.location.href = '/login';
+    }
+  };
 
   const location = useLocation();
   const pathParts = location.pathname.split('/').filter(Boolean);
@@ -274,6 +301,38 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <HelpCircle className="h-5 w-5" />
             </button>
+
+            {/* User Profile / Logout */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="p-2 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center mr-2"
+                title="Profile & Settings"
+              >
+                <User className="h-5 w-5" />
+              </button>
+              
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl z-50 overflow-hidden">
+                  <div className="py-1">
+                    <button 
+                      onClick={() => { setIsUserMenuOpen(false); toast.info('Profile settings coming soon!'); }} 
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2"
+                    >
+                      <User className="h-4 w-4" />
+                      Profile
+                    </button>
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             
             {!hasData ? (
               <div className="flex items-center space-x-2">
