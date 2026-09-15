@@ -362,6 +362,16 @@ export const UrlMappingTableRow = React.memo(({
           </button>
         )}
 
+        {m.status === 'APPROVED' && (
+          <button
+            onClick={() => onUpdateMapping?.(m.id, { status: 'NEEDS_REVIEW' })}
+            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all cursor-pointer"
+            title="Disapprove Mapping"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+
         {!isEditing && (
           <button
             onClick={() => onStartEdit(m.id)}
