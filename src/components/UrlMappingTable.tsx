@@ -658,6 +658,23 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
             </button>
             <button
               onClick={() => {
+                const note = window.prompt("Enter a note to apply to all selected mappings (leave blank to clear):");
+                if (note !== null) {
+                  if (onBulkUpdateMappings) {
+                    onBulkUpdateMappings(Array.from(selectedMappingIds).map(id => ({ id, updates: { notes: note } })));
+                  } else {
+                    selectedMappingIds.forEach(id => onUpdateMapping(id, { notes: note }));
+                  }
+                  setSelectedMappingIds(new Set());
+                }
+              }}
+              className="px-4 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span>Add Note</span>
+            </button>
+            <button
+              onClick={() => {
                 if (onBulkUpdateMappings) {
                   onBulkUpdateMappings(Array.from(selectedMappingIds).map(id => ({ id, updates: { isHidden: true } })));
                 } else {

@@ -234,6 +234,17 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
     setSelectedItemIds(new Set());
   };
 
+  const handleBulkNote = () => {
+    if (!onBulkUpdateMappings) return;
+    const note = window.prompt("Enter a note to apply to all selected issues (leave blank to clear):");
+    if (note !== null) {
+      const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+      const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+      onBulkUpdateMappings(mappingIds.map(id => ({ id, updates: { notes: note } })));
+      setSelectedItemIds(new Set());
+    }
+  };
+
   const handleSort = (key: 'source' | 'target' | 'links') => {
     setSortConfig(prev => {
       if (prev.key === key) {
@@ -573,6 +584,13 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                         >
                           <EyeOff className="h-3.5 w-3.5" />
                           <span>Hide Selected</span>
+                        </button>
+                        <button
+                          onClick={handleBulkNote}
+                          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span>Add Note</span>
                         </button>
                         <button
                           onClick={handleBulkUnhide}
