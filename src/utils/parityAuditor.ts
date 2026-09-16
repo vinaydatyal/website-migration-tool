@@ -3,8 +3,27 @@ import { CrawlEntry, ParityDiscrepancy, MigrationSummaryStats, UrlMapping, Migra
 /**
  * Deep-dive parity inspection between Source URL and Target URL
  */
-export function evaluateParityDiscrepancies(source: CrawlEntry, target: CrawlEntry, profile: MigrationProfile = 'UNKNOWN'): ParityDiscrepancy[] {
+export function evaluateParityDiscrepancies(source: CrawlEntry, target: CrawlEntry | null | undefined, profile: MigrationProfile = 'UNKNOWN'): ParityDiscrepancy[] {
   const discrepancies: ParityDiscrepancy[] = [];
+
+  const hasTraffic = (source.sessions && source.sessions > 0) || (source.clicks && source.clicks > 0);
+  
+  if (source.isOrphaned && hasTraffic && (!target || target.statusCode === 404)) {
+    discrepancies.push({
+      id: `disc_orphan_${source.id}`,
+      type: 'ORPHANED_AD_LANDING_PAGE',
+      severity: 'CRITICAL',
+      title: 'Critical Ad-Spend / Traffic Risk',
+      description: 'This page was receiving paid/organic traffic but was not crawled and is not properly mapped. Ads pointing here will waste spend.',
+      sourceValue: source.discoverySource || 'Analytics',
+      targetValue: target ? 'Mapped to 404' : 'Unmapped',
+      recommendation: 'Map this URL immediately to prevent traffic loss or wasted ad spend.'
+    });
+  }
+
+  if (!target) {
+    return discrepancies;
+  }
 
   // 1. Check if source is non-canonical
   const isSourceNonCanonical = source.canonical && source.canonical.toLowerCase().trim() !== source.url.toLowerCase().trim();

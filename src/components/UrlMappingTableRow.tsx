@@ -110,6 +110,14 @@ export const UrlMappingTableRow = React.memo(({
           >
             <ExternalLink className="h-3 w-3" />
           </a>
+          {m.source.isOrphaned && (
+            <span 
+              className="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/30 shrink-0 flex items-center"
+              title={`Discovered via ${m.source.discoverySource || 'Analytics'} - Not in original crawl`}
+            >
+              Orphaned
+            </span>
+          )}
           <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
             {m.source.inlinks} inlinks
           </span>

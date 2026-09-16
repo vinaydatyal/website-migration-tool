@@ -194,6 +194,8 @@ export const DataSourcesModal: React.FC<Props> = ({
         return [u, d];
       }));
 
+      const sourceUrlSet = new Set(sourceEntries.map(e => e.url.replace(/\/$/, '')));
+
       const enriched = sourceEntries.map(entry => {
         const cleanUrl = entry.url.replace(/\/$/, '');
         const gscRow = gscMap.get(cleanUrl) || {};
@@ -210,7 +212,61 @@ export const DataSourcesModal: React.FC<Props> = ({
         };
       });
 
-      onMergeAnalytics(enriched);
+      // Find orphaned URLs (in GA4 or GSC but not in sourceEntries)
+      const orphanedEntries: any[] = [];
+      const addOrphaned = (url: string, source: 'Analytics' | 'GSC', metrics: any) => {
+        if (!sourceUrlSet.has(url)) {
+          sourceUrlSet.add(url); // prevent duplicates if in both ga4 and gsc
+          let normalizedPath = url;
+          try {
+            normalizedPath = new URL(url.startsWith('http') ? url : `https://example.com${url}`).pathname;
+          } catch (e) {
+            // fallback if URL parsing fails
+          }
+          
+          orphanedEntries.push({
+            id: `orphaned-${Math.random().toString(36).substr(2, 9)}`,
+            url: url,
+            normalizedPath: normalizedPath,
+            statusCode: 0,
+            status: 'Unknown',
+            contentType: 'Unknown',
+            title: 'Orphaned Analytics Page',
+            titleLength: 0,
+            metaDescription: '',
+            metaDescriptionLength: 0,
+            h1: '',
+            metaRobots: '',
+            indexability: 'Unknown',
+            canonical: '',
+            wordCount: 0,
+            inlinks: 0,
+            outlinks: 0,
+            isOrphaned: true,
+            discoverySource: source,
+            clicks: metrics.clicks || 0,
+            impressions: metrics.impressions || 0,
+            sessions: metrics.sessions || 0,
+            pageviews: metrics.pageviews || 0,
+          });
+        }
+      };
+
+      ga4Map.forEach((metrics, url) => {
+        if ((metrics.sessions && metrics.sessions > 0) || (metrics.pageviews && metrics.pageviews > 0)) {
+          addOrphaned(url, 'Analytics', metrics);
+        }
+      });
+
+      gscMap.forEach((metrics, url) => {
+        if ((metrics.clicks && metrics.clicks > 0) || (metrics.impressions && metrics.impressions > 0)) {
+          addOrphaned(url, 'GSC', metrics);
+        }
+      });
+
+      const finalEntries = [...enriched, ...orphanedEntries];
+
+      onMergeAnalytics(finalEntries);
       setAnalyticsMergeSuccess(true);
       setTimeout(() => setAnalyticsMergeSuccess(false), 3000);
     } catch (err: any) {

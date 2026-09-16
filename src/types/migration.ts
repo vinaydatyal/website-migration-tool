@@ -36,6 +36,10 @@ export interface CrawlEntry {
   position?: number;
   sessions?: number;
   pageviews?: number;
+  
+  // Orphaned Flagging
+  isOrphaned?: boolean;
+  discoverySource?: 'Crawl' | 'Analytics' | 'GSC';
 }
 
 export type MatchStrategy = 
@@ -87,6 +91,7 @@ export type DiscrepancyType =
   | 'REDIRECT_CHAIN_RISK'
   | 'SOFT_404_HOMEPAGE_TRAP'
   | 'HUB_TRAP_SOFT_404'
+  | 'ORPHANED_AD_LANDING_PAGE'
   | 'INFO_ONLY';
 
 export interface ParityDiscrepancy {
