@@ -544,6 +544,13 @@ export function App() {
           
           updatedMapping.target = newTarget;
           
+          if (!newTargetUrl) {
+            updatedMapping.strategy = 'UNMAPPED';
+            updatedMapping.status = 'NEEDS_REVIEW';
+          } else {
+            updatedMapping.strategy = 'MANUAL_OVERRIDE';
+          }
+          
           if (newTarget) {
             updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, newTarget, projectProfile);
           } else if (newTargetUrl) {
@@ -605,6 +612,13 @@ export function App() {
           const newTarget = newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null;
           
           updatedMapping.target = newTarget;
+
+          if (!newTargetUrl) {
+            updatedMapping.strategy = 'UNMAPPED';
+            updatedMapping.status = 'NEEDS_REVIEW';
+          } else {
+            updatedMapping.strategy = 'MANUAL_OVERRIDE';
+          }
           
           if (newTarget) {
             updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, newTarget, projectProfile);
