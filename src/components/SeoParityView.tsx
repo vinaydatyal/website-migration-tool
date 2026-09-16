@@ -494,7 +494,9 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-800/30">
-                        {paginatedItems.map((item) => (
+                        {paginatedItems.map((item) => {
+                          const mapping = mappings.find(m => m.id === item.mappingId);
+                          return (
                           <React.Fragment key={item.id}>
                           <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors ${item.isResolved ? 'opacity-50 bg-slate-50 dark:bg-slate-900/30' : ''}`}>
                             <td className="py-3 px-4 text-center">
@@ -702,7 +704,6 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                                           setEditingNoteId(null);
                                         } else {
                                           setEditingNoteId(item.mappingId);
-                                          const mapping = mappings.find(m => m.id === item.mappingId);
                                           setNoteInput(mapping?.notes || '');
                                         }
                                       }}
@@ -764,7 +765,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                             </tr>
                           )}
                         </React.Fragment>
-                        ))}
+                        );})}
                       </tbody>
                     </table>
                   </div>
