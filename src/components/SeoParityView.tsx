@@ -52,6 +52,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState<string>('');
   const [sortConfig, setSortConfig] = useState<{ key: 'source' | 'target' | 'links', direction: 'ASC' | 'DESC' | 'NONE' }>({ key: 'source', direction: 'NONE' });
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [editTargetInput, setEditTargetInput] = useState<string>('');
 
@@ -87,7 +88,6 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
 
   // Extract all discrepancies linked with their mapping context
   const allDiscrepancies = mappings.flatMap(m => 
@@ -919,28 +919,44 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                 {/* Pagination Controls for this group */}
                 {totalPages > 1 && (
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                    <div className="text-sm text-slate-500 dark:text-slate-400">
                       Showing <span className="font-bold text-slate-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(currentPage * itemsPerPage, group.items.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{group.items.length}</span> issues
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-xs font-mono text-slate-600 dark:text-slate-400 px-2">
-                        Page {currentPage} / {totalPages}
-                      </span>
-                      <button
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm dark:shadow-none"
-                      >
-                        Next
-                      </button>
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
+                        <span>Rows per page:</span>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                          className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-xs text-slate-700 dark:text-slate-300"
+                        >
+                          <option value={10}>10</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                          <option value={500}>500</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 dark:text-slate-300"
+                        >
+                          <ArrowRight className="h-5 w-5 rotate-180" />
+                        </button>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Page {currentPage} of {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 dark:text-slate-300"
+                        >
+                          <ArrowRight className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
