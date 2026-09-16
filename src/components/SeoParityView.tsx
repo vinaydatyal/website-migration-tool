@@ -756,6 +756,13 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                               </td>
                             </tr>
                           )}
+                          {mapping?.notes && editingNoteId !== item.mappingId && (
+                            <tr className="bg-amber-50/50 dark:bg-amber-900/10">
+                              <td colSpan={7} className="px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+                                <span className="font-semibold text-amber-900 dark:text-amber-100">Note:</span> {mapping.notes}
+                              </td>
+                            </tr>
+                          )}
                         </React.Fragment>
                         ))}
                       </tbody>

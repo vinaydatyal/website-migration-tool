@@ -467,6 +467,13 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ sourceEntrie
                   </button>
                 </div>
               )}
+              {file.notes && editingNoteId !== file.id && (
+                <div className="py-2 px-4 mb-2 bg-amber-50/50 dark:bg-amber-900/10 border-y border-amber-100 dark:border-amber-900/30 text-xs text-amber-800 dark:text-amber-200"
+                     style={{ marginLeft: `${Math.max(0.5, (depth + 1) * 1.5)}rem` }}
+                >
+                  <span className="font-semibold text-amber-900 dark:text-amber-100">Note:</span> {file.notes}
+                </div>
+              )}
             </React.Fragment>
             ))}
               
