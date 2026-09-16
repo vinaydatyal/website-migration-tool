@@ -371,9 +371,34 @@ export function App() {
             newM.notes = oldM.notes;
             newM.isHidden = oldM.isHidden;
             
-            // If the mapping was explicitly overridden, approved, rejected, or hidden (410), keep the entire old mapping
+            // If the mapping was explicitly overridden, approved, rejected, or hidden (410), keep the manual overrides but refresh target and discrepancies
             if (oldM.status === 'MANUAL' || oldM.status === 'APPROVED' || oldM.status === 'REJECTED' || oldM.status === 'GONE_410' || oldM.strategy === 'MANUAL_OVERRIDE') {
-              return oldM;
+              const refreshedM = { ...oldM };
+              
+              // Refresh the target object from the new safeTgt array in case the target crawl was updated
+              if (refreshedM.targetUrl) {
+                const updatedTarget = safeTgt.find(t => t.url === refreshedM.targetUrl || t.normalizedPath === refreshedM.targetUrl) || null;
+                refreshedM.target = updatedTarget;
+                if (updatedTarget) {
+                  refreshedM.discrepancies = evaluateParityDiscrepancies(refreshedM.source, updatedTarget, profile);
+                } else {
+                  refreshedM.discrepancies = [{
+                    id: `404_manual_${refreshedM.id}`,
+                    type: 'TARGET_404_OR_500',
+                    severity: 'CRITICAL',
+                    title: 'Target Not Found in Crawl',
+                    description: 'The manually entered target URL was not found in the target crawl.',
+                    sourceValue: '',
+                    targetValue: '',
+                    recommendation: 'Check if the page exists or run a new target crawl.'
+                  }];
+                }
+              } else {
+                refreshedM.target = null;
+                refreshedM.discrepancies = evaluateParityDiscrepancies(refreshedM.source, null, profile);
+              }
+              
+              return refreshedM;
             }
           }
           return newM;
