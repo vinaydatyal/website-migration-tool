@@ -535,7 +535,35 @@ export function App() {
     
     const updated = mappings.map(m => {
       if (m.id === mappingId) {
-        return { ...m, ...updates };
+        const updatedMapping = { ...m, ...updates };
+        
+        // If targetUrl was updated, we need to recalculate the target object and parity discrepancies
+        if ('targetUrl' in updates && targetEntries) {
+          const newTargetUrl = updates.targetUrl;
+          const newTarget = newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null;
+          
+          updatedMapping.target = newTarget;
+          
+          if (newTarget) {
+            updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, newTarget, projectProfile);
+          } else if (newTargetUrl) {
+            updatedMapping.discrepancies = [{
+              id: `404_manual_${m.id}`,
+              type: 'TARGET_404_OR_500',
+              severity: 'CRITICAL',
+              title: 'Target Not Found in Crawl',
+              description: 'The manually entered target URL was not found in the target crawl.',
+              sourceValue: '',
+              targetValue: '',
+              recommendation: 'Check if the page exists or run a new target crawl.'
+            }];
+          } else {
+             // Re-evaluate without target (might flag as orphaned)
+             updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, null, projectProfile);
+          }
+        }
+        
+        return updatedMapping;
       }
       // Sync status across clones of the same source URL to avoid them having different statuses,
       // but don't apply other updates (like targetUrl) so they don't become identical duplicates.
@@ -569,7 +597,34 @@ export function App() {
     
     const updated = mappings.map(m => {
       if (updatesMap.has(m.id)) {
-        return { ...m, ...updatesMap.get(m.id) };
+        const updates = updatesMap.get(m.id)!;
+        const updatedMapping = { ...m, ...updates };
+        
+        if ('targetUrl' in updates && targetEntries) {
+          const newTargetUrl = updates.targetUrl;
+          const newTarget = newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null;
+          
+          updatedMapping.target = newTarget;
+          
+          if (newTarget) {
+            updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, newTarget, projectProfile);
+          } else if (newTargetUrl) {
+            updatedMapping.discrepancies = [{
+              id: `404_manual_${m.id}`,
+              type: 'TARGET_404_OR_500',
+              severity: 'CRITICAL',
+              title: 'Target Not Found in Crawl',
+              description: 'The manually entered target URL was not found in the target crawl.',
+              sourceValue: '',
+              targetValue: '',
+              recommendation: 'Check if the page exists or run a new target crawl.'
+            }];
+          } else {
+             updatedMapping.discrepancies = evaluateParityDiscrepancies(updatedMapping.source, null, projectProfile);
+          }
+        }
+        
+        return updatedMapping;
       }
       return m;
     });
