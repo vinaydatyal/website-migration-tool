@@ -22,6 +22,18 @@ export function evaluateParityDiscrepancies(source: CrawlEntry, target: CrawlEnt
   }
 
   if (!target) {
+    if (!discrepancies.some(d => d.type === 'ORPHANED_AD_LANDING_PAGE')) {
+       discrepancies.push({
+         id: `disc_unmapped_${source.id}`,
+         type: 'UNMAPPED_PAGE',
+         severity: 'WARNING',
+         title: 'Page Left Unmapped',
+         description: 'This page has not been mapped to a target URL. It will return a 404 error if not redirected or mapped to 410.',
+         sourceValue: source.url,
+         targetValue: 'Missing',
+         recommendation: 'Map this URL to a target page, or explicitly set its status to 410 (Gone) if it should be deleted.'
+       });
+    }
     return discrepancies;
   }
 
