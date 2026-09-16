@@ -11,10 +11,13 @@ import {
   FileWarning,
   Download,
   CheckCircle,
-  XCircle,
-  Ban,
   MessageSquare,
-  X
+  X,
+  Eye,
+  EyeOff,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { UrlMapping, DiscrepancySeverity, ParityDiscrepancy } from '../types/migration';
 import { FilterBuilder, FilterCondition } from './FilterBuilder';
@@ -46,6 +49,7 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState<string>('');
+  const [sortConfig, setSortConfig] = useState<{ key: 'source' | 'target' | 'links', direction: 'ASC' | 'DESC' | 'NONE' }>({ key: 'source', direction: 'NONE' });
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [editTargetInput, setEditTargetInput] = useState<string>('');
 
@@ -199,6 +203,44 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
       updates: { status: 'GONE_410', statusCode: 410, targetUrl: '/410-gone', strategy: 'GONE_410' } 
     })));
     setSelectedItemIds(new Set());
+  };
+
+  const handleBulk404 = () => {
+    if (!onBulkUpdateMappings) return;
+    const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+    const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+    onBulkUpdateMappings(mappingIds.map(id => ({
+      id,
+      updates: { status: 'MANUAL', statusCode: 404, targetUrl: '/404-not-found', strategy: 'MANUAL_OVERRIDE' }
+    })));
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulkHide = () => {
+    if (!onBulkUpdateMappings) return;
+    const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+    const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+    onBulkUpdateMappings(mappingIds.map(id => ({ id, updates: { isHidden: true } })));
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulkUnhide = () => {
+    if (!onBulkUpdateMappings) return;
+    const selectedItems = allDiscrepancies.filter(d => selectedItemIds.has(d.id));
+    const mappingIds = Array.from(new Set(selectedItems.map(d => d.mappingId)));
+    onBulkUpdateMappings(mappingIds.map(id => ({ id, updates: { isHidden: false } })));
+    setSelectedItemIds(new Set());
+  };
+
+  const handleSort = (key: 'source' | 'target' | 'links') => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        if (prev.direction === 'NONE') return { key, direction: 'ASC' };
+        if (prev.direction === 'ASC') return { key, direction: 'DESC' };
+        return { key: 'source', direction: 'NONE' };
+      }
+      return { key, direction: 'ASC' };
+    });
   };
 
   const handleToggleSelectAll = (items: typeof allDiscrepancies) => {
@@ -423,8 +465,33 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
             const isCritical = group.severity === 'CRITICAL';
             const isHigh = group.severity === 'HIGH';
             
-            const totalPages = Math.ceil(group.items.length / itemsPerPage);
-            const paginatedItems = group.items.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+            const sortedItems = [...group.items].sort((a, b) => {
+              if (sortConfig.direction === 'NONE') return 0;
+              let valA, valB;
+              switch (sortConfig.key) {
+                case 'source':
+                  valA = a.sourcePath;
+                  valB = b.sourcePath;
+                  break;
+                case 'target':
+                  valA = a.targetPath || '';
+                  valB = b.targetPath || '';
+                  break;
+                case 'links': {
+                  const mappingA = mappings.find(m => m.id === a.mappingId);
+                  const mappingB = mappings.find(m => m.id === b.mappingId);
+                  valA = mappingA?.sourceInlinks ?? 0;
+                  valB = mappingB?.sourceInlinks ?? 0;
+                  break;
+                }
+              }
+              if (valA < valB) return sortConfig.direction === 'ASC' ? -1 : 1;
+              if (valA > valB) return sortConfig.direction === 'ASC' ? 1 : -1;
+              return 0;
+            });
+
+            const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
+            const paginatedItems = sortedItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
             return (
               <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
@@ -473,6 +540,51 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                     <p className="text-xs text-slate-600 dark:text-slate-300 pl-8">{group.description}</p>
                   </div>
 
+                  {selectedItemIds.size > 0 && (
+                    <div className="flex items-center justify-between p-3 bg-brand-50/50 dark:bg-brand-950/20 border-b border-brand-100 dark:border-brand-500/20 animate-fade-in">
+                      <div className="text-xs font-semibold text-brand-700 dark:text-brand-300">
+                        {selectedItemIds.size} {selectedItemIds.size === 1 ? 'issue' : 'issues'} selected
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={handleBulkApprove}
+                          className="px-3 py-1.5 rounded-md bg-brand-100 dark:bg-brand-500/20 hover:bg-brand-200 dark:hover:bg-brand-500/30 text-brand-600 dark:text-brand-300 text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Approve Selected</span>
+                        </button>
+                        <button
+                          onClick={handleBulk404}
+                          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-orange-50 dark:hover:bg-orange-500/20 text-slate-700 dark:text-slate-300 hover:text-orange-600 dark:hover:text-orange-300 border border-slate-200 dark:border-slate-700 hover:border-orange-200 dark:hover:border-orange-500/30 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          <span>Mark as 404</span>
+                        </button>
+                        <button
+                          onClick={handleBulk410}
+                          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-500/20 text-slate-700 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-300 border border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-500/30 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          <span>Mark as 410</span>
+                        </button>
+                        <button
+                          onClick={handleBulkHide}
+                          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+                        >
+                          <EyeOff className="h-3.5 w-3.5" />
+                          <span>Hide Selected</span>
+                        </button>
+                        <button
+                          onClick={handleBulkUnhide}
+                          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-xs font-bold flex items-center space-x-1.5 transition-colors shadow-sm"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>Unhide Selected</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="w-full overflow-x-auto">
                     <table className="w-full text-left text-xs whitespace-nowrap">
                       <thead>
@@ -485,11 +597,26 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                               className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 cursor-pointer"
                             />
                           </th>
-                          <th className="py-3 px-4 font-semibold">Source URL (Old)</th>
+                          <th className="py-3 px-4 font-semibold cursor-pointer select-none group" onClick={() => handleSort('source')}>
+                            <div className="flex items-center space-x-1 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                              <span>Source URL (Old)</span>
+                              {sortConfig.key !== 'source' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+                            </div>
+                          </th>
                           <th className="py-3 px-4 font-semibold">Source Value</th>
-                          <th className="py-3 px-4 font-semibold">Target URL (New)</th>
+                          <th className="py-3 px-4 font-semibold cursor-pointer select-none group" onClick={() => handleSort('target')}>
+                            <div className="flex items-center space-x-1 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                              <span>Target URL (New)</span>
+                              {sortConfig.key !== 'target' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+                            </div>
+                          </th>
                           <th className="py-3 px-4 font-semibold">Target Value</th>
-                          <th className="py-3 px-4 text-center font-semibold">Links</th>
+                          <th className="py-3 px-4 text-center font-semibold cursor-pointer select-none group" onClick={() => handleSort('links')}>
+                            <div className="flex items-center justify-center space-x-1 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                              <span>Links</span>
+                              {sortConfig.key !== 'links' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
+                            </div>
+                          </th>
                           {onToggleDiscrepancyResolution && <th className="py-3 px-4 text-center font-semibold">Actions</th>}
                         </tr>
                       </thead>
