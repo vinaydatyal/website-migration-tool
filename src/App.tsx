@@ -117,8 +117,21 @@ export function App() {
     setProjectName(project.name || 'Untitled Project');
     setProjectProfile(project.profile || 'UNKNOWN');
     setProjectCreatedAt(project.createdAt || new Date().toISOString());
-    setSourceEntries(project.sourceEntries);
-    setTargetEntries(project.targetEntries);
+
+    const deduplicateEntries = (entries: any[]) => {
+      if (!entries) return entries;
+      const seen = new Set<string>();
+      return entries.filter(entry => {
+        if (!entry.url) return false;
+        const norm = entry.url.trim().toLowerCase();
+        if (seen.has(norm)) return false;
+        seen.add(norm);
+        return true;
+      });
+    };
+
+    setSourceEntries(deduplicateEntries(project.sourceEntries));
+    setTargetEntries(deduplicateEntries(project.targetEntries));
     setMappings(project.mappings);
     setPatterns(project.patterns);
     setStats(project.stats);
@@ -298,14 +311,25 @@ export function App() {
     try {
       let computedMappings: UrlMapping[] = [];
       
-      // Ensure normalizedPath exists for older crawl data
-      const safeSrc = (src || []).map(entry => {
+      const deduplicateEntries = (entries: CrawlEntry[]) => {
+        const seen = new Set<string>();
+        return entries.filter(entry => {
+          if (!entry.url) return false;
+          const norm = entry.url.trim().toLowerCase();
+          if (seen.has(norm)) return false;
+          seen.add(norm);
+          return true;
+        });
+      };
+
+      // Ensure normalizedPath exists for older crawl data and deduplicate entries
+      const safeSrc = deduplicateEntries(src || []).map(entry => {
         if (!entry.normalizedPath && entry.url) {
           try { entry.normalizedPath = new URL(entry.url).pathname; } catch (e) { entry.normalizedPath = '/'; }
         }
         return entry;
       });
-      const safeTgt = (tgt || []).map(entry => {
+      const safeTgt = deduplicateEntries(tgt || []).map(entry => {
         if (!entry.normalizedPath && entry.url) {
           try { entry.normalizedPath = new URL(entry.url).pathname; } catch (e) { entry.normalizedPath = '/'; }
         }
