@@ -142,14 +142,25 @@ export function App() {
       });
     };
 
-    setSourceEntries(deduplicateEntries(project.sourceEntries));
-    setTargetEntries(deduplicateEntries(project.targetEntries));
-    setMappings(deduplicateMappings(project.mappings));
+    const dedupedSrc = deduplicateEntries(project.sourceEntries);
+    const dedupedTgt = deduplicateEntries(project.targetEntries);
+    const dedupedMaps = deduplicateMappings(project.mappings);
+
+    setSourceEntries(dedupedSrc);
+    setTargetEntries(dedupedTgt);
+    setMappings(dedupedMaps);
     setPatterns(project.patterns);
-    setStats(project.stats);
+    
+    const resDisc = project.resolvedDiscrepancies || {};
+    if (dedupedSrc && dedupedMaps) {
+      setStats(calculateMigrationStats(dedupedSrc, dedupedTgt || [], dedupedMaps, project.profile || 'UNKNOWN', resDisc));
+    } else {
+      setStats(project.stats);
+    }
+    
     setChecklistProgress(project.checklistProgress || {});
     setProjectMetadata(project.metadata || {});
-    setResolvedDiscrepancies(project.resolvedDiscrepancies || {});
+    setResolvedDiscrepancies(resDisc);
     setConfidenceThreshold(project.confidenceThreshold || 75);
     if (!skipNavigate) {
       navigate(`/${slugify(project.name || 'Untitled Project')}/dashboard`);
