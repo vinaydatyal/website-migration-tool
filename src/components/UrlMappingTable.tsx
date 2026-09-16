@@ -20,8 +20,10 @@ import {
   LayoutGrid,
   FileWarning,
   Copy,
+  Download,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageSquare
 } from 'lucide-react';
 import { UrlMapping, CrawlEntry } from '../types/migration';
 import { exportRedirects } from '../utils/exporters';
