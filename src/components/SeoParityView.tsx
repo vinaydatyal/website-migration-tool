@@ -11,6 +11,8 @@ import {
   FileWarning,
   Download,
   CheckCircle,
+  XCircle,
+  Ban,
   MessageSquare,
   X,
   Eye,
@@ -19,7 +21,7 @@ import {
   ArrowDown,
   ArrowUpDown
 } from 'lucide-react';
-import { UrlMapping, DiscrepancySeverity, ParityDiscrepancy } from '../types/migration';
+import { UrlMapping, DiscrepancySeverity, ParityDiscrepancy, CrawlEntry } from '../types/migration';
 import { FilterBuilder, FilterCondition } from './FilterBuilder';
 import { exportDiscrepanciesToCsv } from '../utils/exporters';
 
@@ -478,10 +480,8 @@ export const SeoParityView: React.FC<SeoParityViewProps> = ({
                   valB = b.targetPath || '';
                   break;
                 case 'links': {
-                  const mappingA = mappings.find(m => m.id === a.mappingId);
-                  const mappingB = mappings.find(m => m.id === b.mappingId);
-                  valA = mappingA?.sourceInlinks ?? 0;
-                  valB = mappingB?.sourceInlinks ?? 0;
+                  valA = a.sourceInlinks ?? 0;
+                  valB = b.sourceInlinks ?? 0;
                   break;
                 }
               }
