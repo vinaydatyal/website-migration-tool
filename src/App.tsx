@@ -130,9 +130,21 @@ export function App() {
       });
     };
 
+    const deduplicateMappings = (maps: any[]) => {
+      if (!maps) return maps;
+      const seen = new Set<string>();
+      return maps.filter(m => {
+        if (!m.source?.url) return false;
+        const norm = m.source.url.trim().toLowerCase();
+        if (seen.has(norm)) return false;
+        seen.add(norm);
+        return true;
+      });
+    };
+
     setSourceEntries(deduplicateEntries(project.sourceEntries));
     setTargetEntries(deduplicateEntries(project.targetEntries));
-    setMappings(project.mappings);
+    setMappings(deduplicateMappings(project.mappings));
     setPatterns(project.patterns);
     setStats(project.stats);
     setChecklistProgress(project.checklistProgress || {});
