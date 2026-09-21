@@ -147,6 +147,7 @@ export interface ProjectMetadata {
   baselineIndexedPages?: number;
   baselineOrganicClicks?: number;
   isDemo?: boolean;
+  description?: string;
 }
 
 export interface MigrationProject {

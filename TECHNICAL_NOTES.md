@@ -335,3 +335,32 @@ When creating a "New Blank Project", users encountered a state where the project
    - Added `eventSourceRef` in `UploadZone.tsx` to automatically close any active Server-Sent Events stream when the component unmounts or resets.
 6. **Comprehensive `handleReset` Cleanup**:
    - `handleReset()` in `App.tsx` cleans both global (`uploadZone_draft`, `dataSources_draft`) and project-scoped storage before dispatching state resets and returning execution status to modals.
+
+---
+
+## 14. Scope & Reference Safety: `setActiveFilteredMappings` & State Invocations
+
+### Problem Statement
+In the production environment (`website-migration-tool.up.railway.app`), navigating to the URL mapping view or triggering project render resulted in an immediate unhandled runtime exception:
+```
+ReferenceError: setActiveFilteredMappings is not defined
+    at Swe (https://website-migration-tool.up.railway.app/assets/index-CxJTJ8YX.js:950:94279)
+    at N9 (https://website-migration-tool.up.railway.app/assets/index-CxJTJ8YX.js:60:8139)
+```
+
+### Root Cause
+1. During earlier refactorings of `src/App.tsx`, the `const [activeFilteredMappings, setActiveFilteredMappings] = useState<UrlMapping[]>([]);` state hook was inadvertently omitted from the top-level declarations.
+2. Downstream in the JSX tree, `<UrlMappingTable onFilteredMappingsChange={setActiveFilteredMappings} />` and `<ExportModal mappings={activeFilteredMappings.length > 0 ? activeFilteredMappings : mappings} />` still referenced `setActiveFilteredMappings` and `activeFilteredMappings`.
+3. Because `npm run build` runs `vite build` (which relies on esbuild for JSX transpilation without strict static `tsc` type checking by default), missing variable references in JSX slipped through bundle compilation into minified production assets.
+4. Similarly, `isDataSourcesOpen` and `setIsDataSourcesOpen` had been referenced in modal rendering and navigation callbacks without an explicit `useState` hook declaration in `App.tsx`.
+
+### Solution & Verification
+1. **Restored State Hooks**:
+   - Re-declared `const [activeFilteredMappings, setActiveFilteredMappings] = useState<UrlMapping[]>([]);` in `src/App.tsx`.
+   - Re-declared `const [isDataSourcesOpen, setIsDataSourcesOpen] = useState<boolean>(false);` in `src/App.tsx`.
+2. **ProjectMetadata & Toast Normalization**:
+   - Added `description?: string;` to the `ProjectMetadata` interface in `src/types/migration.ts`.
+   - Standardized `toast()` custom action handlers to use Sonner's type-safe `action: { label, onClick }` API in `handleLoadSample`.
+3. **Verification**:
+   - Full static analysis pass executed via `npx tsc --noEmit`, resolving with 0 errors across all files.
+   - Production bundle compilation executed via `npm run build`, producing clean minified bundles without errors.

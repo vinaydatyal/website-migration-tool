@@ -56,6 +56,7 @@ export function App() {
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
   const [targetEntries, setTargetEntries] = useState<CrawlEntry[] | null>(null);
   const [mappings, setMappings] = useState<UrlMapping[]>([]);
+  const [activeFilteredMappings, setActiveFilteredMappings] = useState<UrlMapping[]>([]);
   const [patterns, setPatterns] = useState<SynthesizedPattern[]>([]);
   const [stats, setStats] = useState<MigrationSummaryStats | null>(null);
   const [confidenceThreshold, setConfidenceThreshold] = useState<number>(75);
@@ -68,6 +69,7 @@ export function App() {
   const [isDeltaOpen, setIsDeltaOpen] = useState<boolean>(false);
   const [deltaReport, setDeltaReport] = useState<DeltaReport | null>(null);
   const [isDomainSwapOpen, setIsDomainSwapOpen] = useState<boolean>(false);
+  const [isDataSourcesOpen, setIsDataSourcesOpen] = useState<boolean>(false);
   const [isRestartModalOpen, setIsRestartModalOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isProjectManagerOpen, setIsProjectManagerOpen] = useState<boolean>(false);
@@ -540,21 +542,14 @@ export function App() {
       if (newWindow) {
         toast.success('Opened Apex Athletics Demo in a new project window/folder!', { icon: '📂' });
       } else {
-        toast((t) => (
-          <div className="flex items-center space-x-2">
-            <span>Demo project ready in a new folder!</span>
-            <a
-              href={demoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => toast.dismiss(t.id)}
-              className="px-2.5 py-1 bg-brand-500 text-slate-950 font-bold rounded text-xs hover:bg-brand-400 transition-colors inline-flex items-center space-x-1"
-            >
-              <span>Open New Folder</span>
-              <span>↗</span>
-            </a>
-          </div>
-        ), { duration: 8000 });
+        toast('Demo project ready in a new folder!', {
+          description: 'Click to open Apex Athletics Demo in a new window/folder.',
+          action: {
+            label: 'Open Folder ↗',
+            onClick: () => window.open(demoUrl, '_blank')
+          },
+          duration: 8000
+        });
       }
     } catch (e) {
       console.error('Failed to prepare demo project:', e);
