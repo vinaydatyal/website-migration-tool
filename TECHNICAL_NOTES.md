@@ -361,6 +361,10 @@ ReferenceError: setActiveFilteredMappings is not defined
 2. **ProjectMetadata & Toast Normalization**:
    - Added `description?: string;` to the `ProjectMetadata` interface in `src/types/migration.ts`.
    - Standardized `toast()` custom action handlers to use Sonner's type-safe `action: { label, onClick }` API in `handleLoadSample`.
-3. **Verification**:
+3. **Browser Environment Variable Polyfill & Safety**:
+   - Replaced un-guarded `process.env` references in `src/utils/supabaseClient.ts` with `import.meta.env` and runtime existence checks.
+   - Configured `define: { 'process.env': {} }` in `vite.config.ts` to prevent any third-party dependencies from throwing `ReferenceError: process is not defined` in browser contexts.
+4. **Verification**:
    - Full static analysis pass executed via `npx tsc --noEmit`, resolving with 0 errors across all files.
    - Production bundle compilation executed via `npm run build`, producing clean minified bundles without errors.
+   - Live end-to-end browser inspection executed on `http://localhost:4000/`, validating clean UI render with 0 runtime exceptions.
