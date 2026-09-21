@@ -884,16 +884,60 @@ export function App() {
     pushToHistory();
     setTargetEntries(newTargetEntries);
     setMappings(mergedMappings);
-    
+
     const newStats = calculateMigrationStats(sourceEntries, newTargetEntries, mergedMappings, projectProfile, resolvedDiscrepancies);
     setStats(newStats);
     
-      setDeltaReport({ fixedCount, regressionCount, newMatchCount, totalPreserved });
+    setDeltaReport({ fixedCount, regressionCount, newMatchCount, totalPreserved });
+
+      saveProjectToIndexedDB({
+        id: projectId,
+        name: projectName,
+        profile: projectProfile,
+        sourceFileName: '',
+        targetFileName: '',
+        sourceDomain: '',
+        targetDomain: '',
+        sourceEntries,
+        targetEntries: newTargetEntries,
+        mappings: mergedMappings,
+        patterns,
+        stats: newStats,
+        checklistProgress,
+        metadata: projectMetadata,
+        resolvedDiscrepancies,
+        confidenceThreshold,
+        createdAt: projectCreatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
     } catch (err: any) {
       console.error("Matching pipeline failed:", err);
       toast.error(`Matching failed: ${err.message || 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleMergeSources = async (newSourceEntries: CrawlEntry[] | null, newTargetEntries: CrawlEntry[] | null) => {
+    setIsProcessing(true);
+    try {
+      const finalSrc = newSourceEntries && newSourceEntries.length > 0 ? newSourceEntries : (sourceEntries || []);
+      const finalTgt = newTargetEntries && newTargetEntries.length > 0 ? newTargetEntries : (targetEntries || []);
+
+      if (finalSrc.length > 0 && finalTgt.length > 0) {
+        await runPipeline(finalSrc, finalTgt, confidenceThreshold, projectProfile, true);
+        toast.success(`Successfully merged and analyzed ${finalSrc.length} Source URLs against ${finalTgt.length} Target URLs!`);
+      } else if (finalTgt.length > 0) {
+        await handleUpdateTargetData(finalTgt);
+        toast.success(`Updated Target crawl data with ${finalTgt.length} URLs.`);
+      } else if (finalSrc.length > 0) {
+        await handleUpdateSourceData(finalSrc);
+      }
+    } catch (err: any) {
+      toast.error(`Merge failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+      setIsDataSourcesOpen(false);
     }
   };
 
@@ -1255,9 +1299,11 @@ export function App() {
             } else {
               handleUpdateTargetData(entries);
             }
-            setIsDataSourcesOpen(false);
           }}
+          onMergeSources={handleMergeSources}
           sourceEntries={sourceEntries || undefined}
+          targetEntries={targetEntries || undefined}
+          projectId={projectId}
           onMergeAnalytics={(enriched) => {
             setSourceEntries(enriched);
             toast.success('Analytics data successfully merged!');

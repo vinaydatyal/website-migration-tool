@@ -121,6 +121,23 @@ app.post('/api/crawl/stop', verifyAuth, (req, res) => {
 
 // PDF generation endpoint removed in favor of client-side window.print()
 
+app.get('/api/crawl/results', verifyAuth, (req, res) => {
+  const jobId = req.query.jobId;
+  if (!jobId || !activeJobs.has(jobId)) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  const job = activeJobs.get(jobId);
+  const doneEvent = job.events.find(e => e.type === 'done');
+  if (doneEvent) {
+    return res.json({ status: 'done', results: doneEvent.results || [], summary: doneEvent.summary });
+  }
+  const errorEvent = job.events.find(e => e.type === 'error');
+  if (errorEvent) {
+    return res.json({ status: 'error', message: errorEvent.message });
+  }
+  return res.json({ status: job.status, events: job.events });
+});
+
 app.get('/api/crawl/events', verifyAuth, (req, res) => {
   const jobId = req.query.jobId;
   if (!jobId || !activeJobs.has(jobId)) {

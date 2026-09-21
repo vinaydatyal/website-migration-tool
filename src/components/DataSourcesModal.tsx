@@ -1,14 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, X, CheckCircle2, Upload, FileSpreadsheet, Loader2, AlertCircle, FileText, Settings, ShieldAlert, UserCircle2, Cookie } from 'lucide-react';
+import { Sparkles, X, CheckCircle2, Upload, FileSpreadsheet, Loader2, AlertCircle, FileText, Settings, ShieldAlert, UserCircle2, Cookie, Database } from 'lucide-react';
 import { CrawlEntry } from '../types/migration';
 import { parseScreamingFrogCsv, parseScreamingFrogExcel } from '../utils/parser';
 import { supabase } from '../utils/supabaseClient';
+import localforage from 'localforage';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onDataParsed: (entries: CrawlEntry[], type: 'source' | 'target') => void;
+  onMergeSources?: (sourceEntries: CrawlEntry[] | null, targetEntries: CrawlEntry[] | null) => Promise<void> | void;
   sourceEntries?: CrawlEntry[];
+  targetEntries?: CrawlEntry[];
+  projectId?: string;
   onMergeAnalytics?: (enrichedEntries: CrawlEntry[]) => void;
   isGscConnected?: boolean;
   onGscConnected?: () => void;
@@ -17,13 +21,21 @@ interface Props {
 }
 
 export const DataSourcesModal: React.FC<Props> = ({ 
-  isOpen, onClose, onDataParsed, sourceEntries, onMergeAnalytics,
+  isOpen, onClose, onDataParsed, onMergeSources, sourceEntries, targetEntries, projectId, onMergeAnalytics,
   isGscConnected: externalIsGscConnected,
   onGscConnected,
   isGa4Connected: externalIsGa4Connected,
   onGa4Connected
 }) => {
   const [inputMode, setInputMode] = useState<'csv' | 'crawl'>('csv');
+  
+  // Staged entries for smart merge
+  const [stagedSourceEntries, setStagedSourceEntries] = useState<CrawlEntry[] | null>(sourceEntries || null);
+  const [stagedTargetEntries, setStagedTargetEntries] = useState<CrawlEntry[] | null>(targetEntries || null);
+  const [isMerging, setIsMerging] = useState(false);
+
+  const scopedSourceKey = projectId ? `dataSources_sourceEntries_${projectId}` : 'dataSources_sourceEntries';
+  const scopedTargetKey = projectId ? `dataSources_targetEntries_${projectId}` : 'dataSources_targetEntries';
   
   // File states
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -294,7 +306,38 @@ export const DataSourcesModal: React.FC<Props> = ({
     URL.revokeObjectURL(url);
   };
 
+  const recoverCrawlResults = async (jobId: string, type: 'source' | 'target') => {
+    try {
+      const res = await fetch(`/api/crawl/results?jobId=${jobId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'done' && Array.isArray(data.results) && data.results.length > 0) {
+          if (type === 'source') {
+            setStagedSourceEntries(data.results);
+            localforage.setItem(scopedSourceKey, data.results).catch(() => {});
+          } else {
+            setStagedTargetEntries(data.results);
+            localforage.setItem(scopedTargetKey, data.results).catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to recover crawl results for ${type}:`, err);
+    }
+  };
+
   useEffect(() => {
+    // Restore cached staged entries from localforage if available
+    localforage.getItem<CrawlEntry[]>(scopedSourceKey).then(saved => {
+      if (saved && saved.length > 0) setStagedSourceEntries(saved);
+      else if (sourceEntries && sourceEntries.length > 0) setStagedSourceEntries(sourceEntries);
+    }).catch(() => {});
+
+    localforage.getItem<CrawlEntry[]>(scopedTargetKey).then(saved => {
+      if (saved && saved.length > 0) setStagedTargetEntries(saved);
+      else if (targetEntries && targetEntries.length > 0) setStagedTargetEntries(targetEntries);
+    }).catch(() => {});
+
     const saved = localStorage.getItem('dataSources_draft');
     if (saved) {
       try {
@@ -306,14 +349,20 @@ export const DataSourcesModal: React.FC<Props> = ({
         
         if (parsed.crawlProgress) {
           setCrawlProgress(parsed.crawlProgress);
-          // Wait for functions to be defined by just doing it asynchronously or using refs/hoisting
+          // If status is done, check if we need to recover the results
+          if (parsed.crawlProgress.source?.jobId && parsed.crawlProgress.source?.status === 'done') {
+            recoverCrawlResults(parsed.crawlProgress.source.jobId, 'source');
+          }
+          if (parsed.crawlProgress.target?.jobId && parsed.crawlProgress.target?.status === 'done') {
+            recoverCrawlResults(parsed.crawlProgress.target.jobId, 'target');
+          }
         }
       } catch (e) {
         console.error('Failed to parse draft state', e);
       }
     }
     setDraftRestored(true);
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -352,6 +401,34 @@ export const DataSourcesModal: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRestored]);
 
+  const handleApplySmartMerge = async () => {
+    const srcToApply = stagedSourceEntries || sourceEntries || null;
+    const tgtToApply = stagedTargetEntries || targetEntries || null;
+
+    if (!srcToApply?.length && !tgtToApply?.length) {
+      setError('Please upload or crawl at least one data source before merging.');
+      return;
+    }
+
+    setIsMerging(true);
+    setError(null);
+
+    try {
+      if (onMergeSources) {
+        await onMergeSources(srcToApply, tgtToApply);
+      } else if (stagedTargetEntries?.length) {
+        onDataParsed(stagedTargetEntries, 'target');
+      } else if (stagedSourceEntries?.length) {
+        onDataParsed(stagedSourceEntries, 'source');
+      }
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to merge data sources');
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleFileChange = async (file: File, type: 'source' | 'target') => {
@@ -374,11 +451,14 @@ export const DataSourcesModal: React.FC<Props> = ({
         throw new Error('No valid crawl URLs found in file.');
       }
 
-      // Briefly show success state then trigger callback (in a real app you might want to wait for user to hit 'Merge Data')
-      setTimeout(() => {
-        setIsProcessing(false);
-        onDataParsed(parsed, type);
-      }, 500);
+      if (type === 'source') {
+        setStagedSourceEntries(parsed);
+        localforage.setItem(scopedSourceKey, parsed).catch(() => {});
+      } else {
+        setStagedTargetEntries(parsed);
+        localforage.setItem(scopedTargetKey, parsed).catch(() => {});
+      }
+      setIsProcessing(false);
 
     } catch (err: any) {
       setError(err.message || 'Failed to parse file.');
@@ -437,11 +517,15 @@ export const DataSourcesModal: React.FC<Props> = ({
             message: 'Crawl completed' 
           }
         }));
-        
-        setTimeout(() => {
-          setIsProcessing(false);
-          onDataParsed(entries, type);
-        }, 500);
+
+        if (type === 'source') {
+          setStagedSourceEntries(entries);
+          localforage.setItem(scopedSourceKey, entries).catch(() => {});
+        } else {
+          setStagedTargetEntries(entries);
+          localforage.setItem(scopedTargetKey, entries).catch(() => {});
+        }
+        setIsProcessing(false);
       } else if (data.type === 'paused') {
         eventSource.close();
         setCrawlProgress((prev: any) => ({...prev, [type]: { ...prev[type], jobId, status: 'paused', message: data.message }}));
@@ -1250,6 +1334,74 @@ export const DataSourcesModal: React.FC<Props> = ({
           </div>
           )}
 
+        </div>
+
+        {/* Sticky Footer Action Bar */}
+        <div className="p-5 border-t border-slate-800 bg-slate-950/95 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-3 text-xs text-slate-400">
+            <div className="flex items-center space-x-1.5">
+              <span className="font-semibold text-slate-300">Source:</span>
+              <span className={`px-2 py-0.5 rounded-full font-mono font-bold ${
+                (stagedSourceEntries?.length || sourceEntries?.length) 
+                  ? 'bg-brand-500/10 text-brand-400 border border-brand-500/30' 
+                  : 'bg-slate-800 text-slate-500'
+              }`}>
+                {stagedSourceEntries?.length || sourceEntries?.length || 0} URLs
+              </span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center space-x-1.5">
+              <span className="font-semibold text-slate-300">Target:</span>
+              <span className={`px-2 py-0.5 rounded-full font-mono font-bold ${
+                (stagedTargetEntries?.length || targetEntries?.length) 
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-slate-800 text-slate-500'
+              }`}>
+                {stagedTargetEntries?.length || targetEntries?.length || 0} URLs
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-xl transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApplySmartMerge}
+              disabled={
+                isMerging || 
+                (!stagedSourceEntries?.length && !stagedTargetEntries?.length && !sourceEntries?.length && !targetEntries?.length)
+              }
+              className={`px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all shadow-lg ${
+                !isMerging && ((stagedSourceEntries?.length || sourceEntries?.length) || (stagedTargetEntries?.length || targetEntries?.length))
+                  ? 'bg-gradient-to-r from-brand-500 to-emerald-500 text-slate-950 hover:from-brand-400 hover:to-emerald-400 shadow-brand-500/25 cursor-pointer transform hover:-translate-y-0.5'
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+              }`}
+            >
+              {isMerging ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Merging Data Sources...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  <span>
+                    {(stagedSourceEntries?.length || sourceEntries?.length) && (stagedTargetEntries?.length || targetEntries?.length)
+                      ? `Run Smart Merge (${stagedSourceEntries?.length || sourceEntries?.length} Source vs ${stagedTargetEntries?.length || targetEntries?.length} Target)`
+                      : (stagedTargetEntries?.length || targetEntries?.length)
+                      ? `Merge Target Crawl (${stagedTargetEntries?.length || targetEntries?.length} URLs)`
+                      : `Merge Source Crawl (${stagedSourceEntries?.length || sourceEntries?.length || 0} URLs)`}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
       </div>

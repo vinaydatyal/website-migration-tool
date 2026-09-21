@@ -309,6 +309,18 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         if (!confirmed) return;
       }
 
+      // Guard against accidental Source-Only audit when user typed a Target site URL but hasn't crawled it yet
+      if (sourceEntries?.length && !targetEntries?.length && targetUrl?.trim()) {
+        const confirmed = window.confirm(
+          `Target Site Not Crawled Yet:\n\n` +
+          `You entered Target Site: ${targetUrl.trim()}\n` +
+          `However, you have not crawled it yet.\n\n` +
+          `Proceeding now will trigger a Source-Only Audit, marking all ${sourceEntries.length} source URLs as UNMAPPED.\n\n` +
+          `Click Cancel to stay and crawl your Target site first, or click OK to proceed with a Source-Only Audit.`
+        );
+        if (!confirmed) return;
+      }
+
       setIsProcessing(true);
       
       let finalSourceEntries = sourceEntries ? [...sourceEntries] : [];

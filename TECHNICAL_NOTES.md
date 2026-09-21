@@ -368,3 +368,43 @@ ReferenceError: setActiveFilteredMappings is not defined
    - Full static analysis pass executed via `npx tsc --noEmit`, resolving with 0 errors across all files.
    - Production bundle compilation executed via `npm run build`, producing clean minified bundles without errors.
    - Live end-to-end browser inspection executed on `http://localhost:4000/`, validating clean UI render with 0 runtime exceptions.
+
+---
+
+## 15. Multi-Source Crawl Coordination & "Smart Merge" Pipeline Architecture
+
+### Problem Statement & Symptoms
+When users crawled both the Old Site (`roofwindowoutlet.co.uk`, 475 pages) and the New Site (`fhfw1x-yz.myshopify.com`, 302 pages) in the `Manage Data Sources` modal:
+1. The modal UI showed both sites crawled to 100% (475 source pages and 302 target pages).
+2. However, the Dashboard displayed:
+   - `Running Source-Only Audit: 0 Target URLs were provided. All 475 URLs will be marked as UNMAPPED.`
+   - Total Crawled Pages: 475, Successfully Mapped: 0, Unmapped: 475.
+   - SEO Readiness Score: 5 (Grade D - High Risk).
+
+### Root Cause Analysis
+1. **Premature Auto-Close on Single Crawl Completion**:
+   - In `DataSourcesModal.tsx`, when an SSE crawl completed (`data.type === 'done'`), a timer (`setTimeout(() => onDataParsed(entries, type), 500)`) immediately invoked the parent callback and closed the modal via `setIsDataSourcesOpen(false)`.
+   - When the Source crawl finished first, `onDataParsed(entries, 'source')` triggered `handleUpdateSourceData(entries)`.
+   - Because the Target crawl had not yet completed or was not in parent state (`targetEntries = []`), `runPipeline` executed a Source-Only audit, marking all 475 URLs as UNMAPPED.
+   - Simultaneously closing the modal unmounted the Target crawl stream and discarded in-flight target URLs.
+2. **Lack of Staged Crawl State & Missing CTA**:
+   - `DataSourcesModal` did not retain crawled entries in persistent state or `localforage`. It only saved summary counters in `localStorage('dataSources_draft')`.
+   - When users re-opened `Manage Data Sources`, the modal displayed the previous counts ("475 found" and "302 found") from `localStorage`, but had no entries in memory and had no bottom action button to submit or merge them into the active project.
+3. **Unsaved Target Updates in IndexedDB**:
+   - `handleUpdateTargetData` in `App.tsx` updated React state but omitted `saveProjectToIndexedDB(...)`, risking state rollback on page refresh.
+4. **Accidental Source-Only Audits in UploadZone**:
+   - In `UploadZone.tsx`, if a user entered a Target URL but did not click its crawl button before clicking the main action button, the app ran a Source-Only audit without notifying the user that the Target site had been omitted.
+
+### Solutions Implemented
+1. **Persistent Staged Entries & Recovery**:
+   - Introduced `stagedSourceEntries` and `stagedTargetEntries` in `DataSourcesModal.tsx`, backed by project-scoped `localforage` storage (`dataSources_sourceEntries_${projectId}`).
+   - Added a dedicated `/api/crawl/results?jobId=...` endpoint in `server/index.js` allowing the modal to recover full crawled entries from completed jobs on mount.
+2. **Eliminated Premature Auto-Close & Added Smart Merge Action Bar**:
+   - Removed auto-closing `setTimeout` on crawl completion in `DataSourcesModal.tsx`.
+   - Added a sticky bottom Action Bar with real-time URL counters for Source and Target, and a primary CTA:
+     `"Run Smart Merge (${sourceCount} Source vs ${targetCount} Target)"`.
+3. **Unified Source & Target Pipeline Handshake**:
+   - Added `handleMergeSources(src, tgt)` in `App.tsx`, executing `runPipeline` with both populated datasets to generate accurate matches, confidence scores, and SEO parity audits.
+   - Ensured `handleUpdateTargetData` explicitly calls `saveProjectToIndexedDB`.
+4. **UploadZone Target Crawl Safeguard**:
+   - Added confirmation safeguard in `UploadZone.tsx` alerting users if a Target URL is entered but not crawled before starting analysis.
