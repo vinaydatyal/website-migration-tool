@@ -74,7 +74,9 @@ async function runCrawlJob(jobId, url, config, initialState = null) {
           successCount: entries.filter(r => r.statusCode && r.statusCode < 400).length,
           errorCount: entries.filter(r => !r.statusCode || r.statusCode >= 400).length
         };
-        activeJobs.get(jobId).events.push({ type: 'done', results: entries, summary });
+        activeJobs.get(jobId).events.push({ type: 'done', summary });
+        // NOTE: results are NOT included in the SSE event to avoid payload size limits.
+        // The client fetches full results via GET /api/crawl/results?jobId=... after receiving 'done'.
       }
     }
   } catch (error) {

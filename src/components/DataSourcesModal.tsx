@@ -33,6 +33,7 @@ export const DataSourcesModal: React.FC<Props> = ({
   const [stagedSourceEntries, setStagedSourceEntries] = useState<CrawlEntry[] | null>(sourceEntries || null);
   const [stagedTargetEntries, setStagedTargetEntries] = useState<CrawlEntry[] | null>(targetEntries || null);
   const [isMerging, setIsMerging] = useState(false);
+  const [staleWarning, setStaleWarning] = useState<{ source?: boolean; target?: boolean }>({});
 
   const scopedSourceKey = projectId ? `dataSources_sourceEntries_${projectId}` : 'dataSources_sourceEntries';
   const scopedTargetKey = projectId ? `dataSources_targetEntries_${projectId}` : 'dataSources_targetEntries';
@@ -401,6 +402,25 @@ export const DataSourcesModal: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRestored]);
 
+  // Staleness detector: if crawlProgress says 'done' but no entries were recovered
+  // after 2.5s, reset stale state so UI shows 'Start Crawl' instead of misleading counts
+  useEffect(() => {
+    if (!draftRestored) return;
+    const timer = setTimeout(() => {
+      if (crawlProgress.source?.status === 'done' && !stagedSourceEntries?.length) {
+        setCrawlProgress((prev: any) => ({ ...prev, source: null }));
+        setStaleWarning(prev => ({ ...prev, source: true }));
+      }
+      if (crawlProgress.target?.status === 'done' && !stagedTargetEntries?.length) {
+        setCrawlProgress((prev: any) => ({ ...prev, target: null }));
+        setStaleWarning(prev => ({ ...prev, target: true }));
+      }
+    }, 2500);
+    return () => clearTimeout(timer);
+  // Only run once after draftRestored becomes true
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRestored]);
+
   const handleApplySmartMerge = async () => {
     const srcToApply = stagedSourceEntries || sourceEntries || null;
     const tgtToApply = stagedTargetEntries || targetEntries || null;
@@ -517,10 +537,9 @@ export const DataSourcesModal: React.FC<Props> = ({
         }));
       } else if (data.type === 'done') {
         eventSource.close();
-        const entries = data.results || [];
         const summary = data.summary || {
-          totalDiscovered: entries.length,
-          crawledCount: entries.length,
+          totalDiscovered: 0,
+          crawledCount: 0,
           queuedCount: 0,
           maxPagesReached: false,
           maxPages: crawlConfig.maxPages
@@ -529,24 +548,54 @@ export const DataSourcesModal: React.FC<Props> = ({
           ...prev, 
           [type]: { 
             jobId, 
-            status: 'done', 
+            status: 'fetching_results',
             current: summary.crawledCount, 
             total: summary.totalDiscovered,
             discovered: summary.totalDiscovered,
             queued: summary.queuedCount,
             summary,
-            message: 'Crawl completed' 
+            message: 'Downloading results...'
           }
         }));
 
-        if (type === 'source') {
-          setStagedSourceEntries(entries);
-          localforage.setItem(scopedSourceKey, entries).catch(() => {});
-        } else {
-          setStagedTargetEntries(entries);
-          localforage.setItem(scopedTargetKey, entries).catch(() => {});
-        }
-        setIsProcessing(false);
+        // Fetch full results via HTTP (avoids SSE payload size limits for large crawls)
+        fetch(`/api/crawl/results?jobId=${jobId}`)
+          .then(r => r.json())
+          .then(resultData => {
+            const entries: CrawlEntry[] = resultData.results || [];
+            const resolvedSummary = resultData.summary || summary;
+            setCrawlProgress((prev: any) => ({
+              ...prev,
+              [type]: {
+                jobId,
+                status: 'done',
+                current: resolvedSummary.crawledCount,
+                total: Math.max(resolvedSummary.totalDiscovered, resolvedSummary.crawledCount),
+                discovered: Math.max(resolvedSummary.totalDiscovered, resolvedSummary.crawledCount),
+                queued: resolvedSummary.queuedCount,
+                summary: resolvedSummary,
+                message: 'Crawl completed'
+              }
+            }));
+            if (type === 'source') {
+              setStagedSourceEntries(entries);
+              localforage.setItem(scopedSourceKey, entries).catch(() => {});
+            } else {
+              setStagedTargetEntries(entries);
+              localforage.setItem(scopedTargetKey, entries).catch(() => {});
+            }
+            // Clear any stale warning since we now have fresh data
+            setStaleWarning(prev => ({ ...prev, [type]: false }));
+          })
+          .catch(err => {
+            console.error('Failed to fetch crawl results:', err);
+            // Mark as stale — data could not be retrieved
+            setCrawlProgress((prev: any) => ({ ...prev, [type]: null }));
+            setStaleWarning(prev => ({ ...prev, [type]: true }));
+          })
+          .finally(() => {
+            setIsProcessing(false);
+          });
       } else if (data.type === 'paused') {
         eventSource.close();
         setCrawlProgress((prev: any) => ({...prev, [type]: { ...prev[type], jobId, status: 'paused', message: data.message }}));
@@ -811,14 +860,14 @@ export const DataSourcesModal: React.FC<Props> = ({
                     ) : (
                       <button 
                         onClick={() => handleCrawl('source')}
-                        disabled={!sourceUrl || (isProcessing && crawlProgress.source?.status !== 'done')}
+                        disabled={!sourceUrl || (isProcessing && crawlProgress.source?.status !== 'done' && crawlProgress.source?.status !== 'fetching_results')}
                         className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
                       >
                         {crawlProgress.source?.status === 'done' ? 'Restart Crawl' : (crawlProgress.source?.status === 'error' ? 'Restart Crawl' : 'Start Crawl')}
                       </button>
                     )}
 
-                    {crawlProgress.source && crawlProgress.source.status !== 'done' && (
+                    {crawlProgress.source && crawlProgress.source.status !== 'done' && crawlProgress.source.status !== 'fetching_results' && (
                       <div className="mt-4 p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-semibold text-slate-200 flex items-center space-x-1.5">
@@ -855,6 +904,20 @@ export const DataSourcesModal: React.FC<Props> = ({
                             </span>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {crawlProgress.source?.status === 'fetching_results' && (
+                      <div className="mt-4 p-3 rounded-xl bg-brand-500/5 border border-brand-500/20 flex items-center space-x-3">
+                        <Loader2 className="h-4 w-4 text-brand-400 animate-spin shrink-0" />
+                        <p className="text-xs text-brand-300 font-medium">Downloading {crawlProgress.source?.summary?.crawledCount || '...'} crawl results...</p>
+                      </div>
+                    )}
+
+                    {staleWarning.source && !crawlProgress.source && (
+                      <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                        <p className="text-xs font-bold text-amber-400">⚠️ Previous crawl data was lost</p>
+                        <p className="text-[11px] text-amber-300/80 leading-relaxed">The server restarted since the last crawl. The URL data is no longer available. Please run a new crawl to continue.</p>
                       </div>
                     )}
 
@@ -1006,14 +1069,14 @@ export const DataSourcesModal: React.FC<Props> = ({
                     ) : (
                       <button 
                         onClick={() => handleCrawl('target')}
-                        disabled={!targetUrl || (isProcessing && crawlProgress.target?.status !== 'done')}
+                        disabled={!targetUrl || (isProcessing && crawlProgress.target?.status !== 'done' && crawlProgress.target?.status !== 'fetching_results')}
                         className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
                       >
                         {crawlProgress.target?.status === 'done' ? 'Restart Crawl' : (crawlProgress.target?.status === 'error' ? 'Restart Crawl' : 'Start Crawl')}
                       </button>
                     )}
 
-                    {crawlProgress.target && crawlProgress.target.status !== 'done' && (
+                    {crawlProgress.target && crawlProgress.target.status !== 'done' && crawlProgress.target.status !== 'fetching_results' && (
                       <div className="mt-4 p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-semibold text-slate-200 flex items-center space-x-1.5">
@@ -1050,6 +1113,20 @@ export const DataSourcesModal: React.FC<Props> = ({
                             </span>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {crawlProgress.target?.status === 'fetching_results' && (
+                      <div className="mt-4 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex items-center space-x-3">
+                        <Loader2 className="h-4 w-4 text-emerald-400 animate-spin shrink-0" />
+                        <p className="text-xs text-emerald-300 font-medium">Downloading {crawlProgress.target?.summary?.crawledCount || '...'} crawl results...</p>
+                      </div>
+                    )}
+
+                    {staleWarning.target && !crawlProgress.target && (
+                      <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                        <p className="text-xs font-bold text-amber-400">⚠️ Previous crawl data was lost</p>
+                        <p className="text-[11px] text-amber-300/80 leading-relaxed">The server restarted since the last crawl. Please run a new crawl to get your target URLs into the system.</p>
                       </div>
                     )}
 
