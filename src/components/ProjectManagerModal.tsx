@@ -8,10 +8,12 @@ import {
   Check, 
   Clock,
   Layers,
-  ArrowRight
+  ArrowRight,
+  ExternalLink
 } from 'lucide-react';
 import { MigrationProject } from '../types/migration';
 import { getAllProjectsFromIndexedDB, deleteProjectFromIndexedDB, saveProjectToIndexedDB } from '../utils/storage';
+import { slugify } from '../utils/text';
 import { toast } from 'sonner';
 
 interface ProjectManagerModalProps {
@@ -203,6 +205,11 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                               Active
                             </span>
                           )}
+                          {Boolean(p.isDemo || p.metadata?.isDemo || p.name?.toLowerCase().includes('demo')) && (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              Demo
+                            </span>
+                          )}
                           {runningJobText && (
                             <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center space-x-1">
                               <span className="animate-pulse h-1.5 w-1.5 bg-amber-400 rounded-full inline-block mr-1"></span>
@@ -240,16 +247,26 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
                     {!isActive && !isEditing && (
-                      <div className="text-xs font-bold text-brand-400 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="text-xs font-bold text-brand-400 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity mr-1">
                         <span>Open</span>
                         <ArrowRight className="h-3 w-3" />
                       </div>
                     )}
                     <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(`/${slugify(p.name || 'Untitled Project')}/dashboard`, '_blank');
+                      }}
+                      className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                      title="Open project folder in new window"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={(e) => handleDelete(p.id, e)}
-                      className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                      className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all cursor-pointer"
                       title="Delete Project"
                     >
                       <Trash2 className="h-4 w-4" />

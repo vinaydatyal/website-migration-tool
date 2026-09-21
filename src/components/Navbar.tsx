@@ -16,7 +16,8 @@ import {
   Database,
   Server,
   User,
-  LogOut
+  LogOut,
+  ExternalLink
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { slugify } from '../utils/text';
@@ -355,10 +356,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
                 <button
                   onClick={onLoadSample}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-brand-50 text-brand-600 border border-brand-200 hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-400 dark:border-brand-500/30 dark:hover:bg-brand-500/20 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-brand-50 text-brand-600 border border-brand-200 hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-400 dark:border-brand-500/30 dark:hover:bg-brand-500/20 transition-all cursor-pointer shadow-sm group"
+                  title="Open sample demo dataset in a dedicated new project folder"
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Load Sample Crawls</span>
+                  <Sparkles className="h-3.5 w-3.5 group-hover:scale-110 transition-transform" />
+                  <span>Load Demo (New Folder)</span>
+                  <ExternalLink className="h-3 w-3 opacity-70" />
                 </button>
               </div>
             ) : (

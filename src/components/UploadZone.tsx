@@ -13,7 +13,8 @@ import {
   Cookie,
   UserCircle2,
   Trash2,
-  Globe
+  Globe,
+  ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import localforage from 'localforage';
@@ -1678,10 +1679,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
         <button
           onClick={onLoadSample}
-          className="w-full sm:w-auto px-6 py-3.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700/80 flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm"
+          className="w-full sm:w-auto px-6 py-3.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700/80 flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm group"
+          title="Open sample e-commerce migration in a dedicated new project folder"
         >
-          <Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400" />
-          <span>Load Demo Sample (Apex Athletics)</span>
+          <Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400 group-hover:scale-110 transition-transform" />
+          <span>Load Demo Sample (New Folder)</span>
+          <ExternalLink className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 ml-1 opacity-80" />
         </button>
       </div>
 

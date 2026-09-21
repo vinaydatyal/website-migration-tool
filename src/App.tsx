@@ -46,6 +46,7 @@ import {
   deleteSnapshot
 } from './utils/storage';
 import { SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE } from './data/sampleData';
+import { createOrGetDemoProject } from './utils/demoData';
 import { supabase } from './utils/supabaseClient';
 import { Auth } from './pages/Auth';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -55,37 +56,32 @@ export function App() {
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
   const [targetEntries, setTargetEntries] = useState<CrawlEntry[] | null>(null);
   const [mappings, setMappings] = useState<UrlMapping[]>([]);
-  const [activeFilteredMappings, setActiveFilteredMappings] = useState<UrlMapping[]>([]);
-  const [mappingsHistory, setMappingsHistory] = useState<UrlMapping[][]>([]);
-  const [redoStack, setRedoStack] = useState<UrlMapping[][]>([]);
   const [patterns, setPatterns] = useState<SynthesizedPattern[]>([]);
   const [stats, setStats] = useState<MigrationSummaryStats | null>(null);
-  const [confidenceThreshold, setConfidenceThreshold] = useState(75);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isImportMapOpen, setIsImportMapOpen] = useState(false);
-  const [isProjectManagerOpen, setIsProjectManagerOpen] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [helpContext, setHelpContext] = useState<string | undefined>();
-  const [snapshots, setSnapshots] = useState<MigrationSnapshot[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processProgress, setProcessProgress] = useState(0);
-  const [isRestoring, setIsRestoring] = useState(true);
-
-  // Incremental Updates State
-  const [isDataSourcesOpen, setIsDataSourcesOpen] = useState(false);
-  const [isRestartModalOpen, setIsRestartModalOpen] = useState(false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(75);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [processProgress, setProcessProgress] = useState<number>(0);
+  const [mappingsHistory, setMappingsHistory] = useState<UrlMapping[][]>([]);
+  const [redoStack, setRedoStack] = useState<UrlMapping[][]>([]);
+  const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isImportMapOpen, setIsImportMapOpen] = useState<boolean>(false);
+  const [isDeltaOpen, setIsDeltaOpen] = useState<boolean>(false);
   const [deltaReport, setDeltaReport] = useState<DeltaReport | null>(null);
-  const [isDomainSwapOpen, setIsDomainSwapOpen] = useState(false);
-
-  // Project Metadata State
+  const [isDomainSwapOpen, setIsDomainSwapOpen] = useState<boolean>(false);
+  const [isRestartModalOpen, setIsRestartModalOpen] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [isProjectManagerOpen, setIsProjectManagerOpen] = useState<boolean>(false);
+  const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [helpContext, setHelpContext] = useState<string | undefined>(undefined);
+  const [snapshots, setSnapshots] = useState<MigrationSnapshot[]>([]);
   const [projectId, setProjectId] = useState<string>(() => crypto.randomUUID());
   const [projectName, setProjectName] = useState<string>('Untitled Project');
   const [projectProfile, setProjectProfile] = useState<MigrationProfile>('UNKNOWN');
-  const [projectCreatedAt, setProjectCreatedAt] = useState<string>('');
   const [checklistProgress, setChecklistProgress] = useState<Record<string, boolean>>({});
-  const [isGscConnected, setIsGscConnected] = useState(false);
-  const [isGa4Connected, setIsGa4Connected] = useState(false);
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string>(() => new Date().toISOString());
+  const [isRestoring, setIsRestoring] = useState<boolean>(true);
+  const [isGscConnected, setIsGscConnected] = useState<boolean>(false);
+  const [isGa4Connected, setIsGa4Connected] = useState<boolean>(false);
 
   // Check connection status on load
   useEffect(() => {
@@ -166,7 +162,10 @@ export function App() {
     }
     
     setChecklistProgress(project.checklistProgress || {});
-    setProjectMetadata(project.metadata || {});
+    setProjectMetadata({
+      ...(project.metadata || {}),
+      isDemo: Boolean(project.isDemo || project.metadata?.isDemo)
+    });
     setResolvedDiscrepancies(resDisc);
     setConfidenceThreshold(project.confidenceThreshold || 75);
     if (!skipNavigate) {
@@ -181,6 +180,22 @@ export function App() {
       const parts = location.pathname.split('/');
       const urlSlug = parts[1];
 
+      // Dedicated handling for demo URLs to guarantee reliable opening in separate tabs/folders
+      if (urlSlug === 'apex-athletics-demo' || urlSlug === 'apex-athletics') {
+        let found = projects.find(p => 
+          p.isDemo || 
+          slugify(p.name || '') === 'apex-athletics-demo' || 
+          slugify(p.name || '') === 'apex-athletics'
+        );
+        if (!found) {
+          found = await createOrGetDemoProject();
+        }
+        loadProjectIntoState(found, true);
+        toast.success('Loaded project: Apex Athletics Demo');
+        setIsRestoring(false);
+        return;
+      }
+
       if (projects.length > 0) {
         if (urlSlug) {
           const found = projects.find(p => slugify(p.name || 'Untitled Project') === urlSlug);
@@ -189,8 +204,10 @@ export function App() {
             toast.success(`Loaded project: ${found.name || 'Untitled Project'}`);
           }
         } else {
-          // Auto-load most recently updated project if we're on root
-          const mostRecent = projects.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+          // Auto-load most recently updated REAL project if on root so demo dataset never hijacks workspace
+          const realProjects = projects.filter(p => !p.isDemo && !p.metadata?.isDemo && slugify(p.name || '') !== 'apex-athletics-demo' && slugify(p.name || '') !== 'apex-athletics');
+          const candidates = realProjects.length > 0 ? realProjects : projects;
+          const mostRecent = candidates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
           if (mostRecent) {
             loadProjectIntoState(mostRecent, false);
             toast.success(`Restored previous session: ${mostRecent.name || 'Untitled Project'}`);
@@ -510,17 +527,39 @@ export function App() {
   };
 
   const handleLoadSample = async () => {
-    const newId = crypto.randomUUID();
-    setProjectId(newId);
-    setProjectName('Apex Athletics Demo');
-    setProjectProfile('CMS_SWITCH');
-    setProjectCreatedAt(new Date().toISOString());
-    setResolvedDiscrepancies({});
-    setChecklistProgress({});
-    setProjectMetadata({ isDemo: true });
-    await runPipeline(SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE, confidenceThreshold, 'CMS_SWITCH');
-    toast.success('Loaded Apex Athletics Demo Dataset!');
-    navigate(`/${slugify('Apex Athletics')}/dashboard`);
+    const demoSlug = slugify('Apex Athletics Demo');
+    const demoUrl = `/${demoSlug}/dashboard`;
+
+    // 1. Immediately open a new window/folder tab synchronously within user click event to satisfy browser popup policies
+    const newWindow = window.open(demoUrl, '_blank');
+
+    try {
+      // 2. Ensure demo project is pre-built and saved in IndexedDB
+      await createOrGetDemoProject();
+
+      if (newWindow) {
+        toast.success('Opened Apex Athletics Demo in a new project window/folder!', { icon: '📂' });
+      } else {
+        toast((t) => (
+          <div className="flex items-center space-x-2">
+            <span>Demo project ready in a new folder!</span>
+            <a
+              href={demoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => toast.dismiss(t.id)}
+              className="px-2.5 py-1 bg-brand-500 text-slate-950 font-bold rounded text-xs hover:bg-brand-400 transition-colors inline-flex items-center space-x-1"
+            >
+              <span>Open New Folder</span>
+              <span>↗</span>
+            </a>
+          </div>
+        ), { duration: 8000 });
+      }
+    } catch (e) {
+      console.error('Failed to prepare demo project:', e);
+      toast.error('Failed to load demo project');
+    }
   };
 
   const handleReset = async () => {

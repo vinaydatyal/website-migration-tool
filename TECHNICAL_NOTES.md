@@ -288,9 +288,15 @@ RangeError: Maximum call stack size exceeded
    - Demo projects are flagged with `isDemo: true`.
    - The Navbar renders a persistent `DEMO DATASET` badge instead of `AUTOSAVED`.
    - Attempting to run analysis with demo data under a custom project name presents an explicit confirmation dialog.
-   - The onboarding demo button is renamed from generic `"Load E-Commerce Demo Dataset"` to `"Load Demo Sample (Apex Athletics)"`.
-5. **Crawler Hardening for E-Commerce**:
+   - The onboarding demo button is renamed from generic `"Load E-Commerce Demo Dataset"` to `"Load Demo Sample (New Folder)"`.
+5. **Dedicated New Project Folder / Window Isolation**:
+   - **No In-Place Overwrites**: Clicking "Load Demo Sample (New Folder)" (in `UploadZone.tsx`) or "Load Demo (New Folder)" (in `Navbar.tsx`) no longer overwrites the active React state or staged workspace in the current window.
+   - **Synchronous New Window Spawning**: Invokes `window.open('/apex-athletics-demo/dashboard', '_blank')` directly within the user click gesture event to bypass aggressive browser popup blockers.
+   - **Standalone Project Persistence (`createOrGetDemoProject`)**: Pre-computes full matching mappings, regex patterns, and parity stats for the sample dataset and saves it to IndexedDB as an isolated `Apex Athletics Demo` project entity (`isDemo: true`).
+   - **On-Demand Demo Restoration**: If any tab navigates to `/apex-athletics-demo/dashboard`, `restore()` in `App.tsx` automatically resolves or creates the demo project on the fly without touching any other active tab or session.
+   - **Root URL Auto-Restore Protection**: On visiting the root URL `/`, `restore()` explicitly filters out demo projects when selecting the most recent project candidate. This guarantees that real user projects (e.g. "RWO") are always restored on root, completely preventing sample demo data from hijacking the user's workspace.
+   - **Project Manager ("Folder") Multitasking**: Every project row in `ProjectManagerModal.tsx` now displays a `Demo` badge and an `Open in new window` button, allowing users to keep multiple project folders open simultaneously in separate browser tabs without cross-contamination.
+6. **Crawler Hardening for E-Commerce**:
    - **Cloudflare / 403 Bot Detection**: Emits an actionable event advising users to export from Screaming Frog and upload CSV if automated crawling is blocked.
    - **Shopify `/password` Detection**: Alerts users when a storefront is password-gated.
    - **Built-in Faceted Parameter Exclusions**: Automatically excludes query parameter loops (`cart`, `checkout`, `sort_by`, `add-to-cart`, `variant=`) from exploding crawl depth.
-
