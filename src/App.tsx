@@ -49,6 +49,7 @@ import { SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE } from './data/sam
 import { supabase } from './utils/supabaseClient';
 import { Auth } from './pages/Auth';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import localforage from 'localforage';
 
 export function App() {
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
@@ -108,6 +109,12 @@ export function App() {
   }, []);
   const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata>({});
   const [resolvedDiscrepancies, setResolvedDiscrepancies] = useState<Record<string, boolean>>({});
+
+  const isDemo = Boolean(
+    projectMetadata?.isDemo || 
+    sourceEntries?.some(e => e.url?.includes('apexathletics.com')) ||
+    targetEntries?.some(e => e.url?.includes('apexathletics.io'))
+  );
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -294,7 +301,8 @@ export function App() {
         resolvedDiscrepancies,
         confidenceThreshold,
         createdAt: projectCreatedAt,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        isDemo
       });
     }, 3000); // 3.0s debounce
 
@@ -509,15 +517,24 @@ export function App() {
     setProjectCreatedAt(new Date().toISOString());
     setResolvedDiscrepancies({});
     setChecklistProgress({});
-    setProjectMetadata({});
+    setProjectMetadata({ isDemo: true });
     await runPipeline(SAMPLE_ECOMMERCE_OLD_SITE, SAMPLE_ECOMMERCE_NEW_SITE, confidenceThreshold, 'CMS_SWITCH');
-    toast.success('Loaded Apex Athletics E-Commerce Demo Dataset!');
+    toast.success('Loaded Apex Athletics Demo Dataset!');
     navigate(`/${slugify('Apex Athletics')}/dashboard`);
   };
 
   const handleReset = async () => {
     if (!window.confirm('Are you sure you want to start a new project? Any unsaved changes will be lost.')) return;
     
+    // Purge cached upload draft and uncommitted staged entries completely
+    try {
+      localStorage.removeItem('uploadZone_draft');
+      await localforage.removeItem('uploadZone_sourceEntries');
+      await localforage.removeItem('uploadZone_targetEntries');
+    } catch (e) {
+      console.error('Failed to clean up uploadZone storage:', e);
+    }
+
     setProjectId(crypto.randomUUID());
     setProjectName('Untitled Project');
     setProjectProfile('UNKNOWN');
@@ -977,6 +994,7 @@ export function App() {
               setProjectName={setProjectName}
               onSaveVersion={() => takeSnapshot('Manual Snapshot', mappings, stats!)}
               onForceSave={handleForceSave}
+              isDemo={isDemo}
             />
 
             {/* Main Viewport */}

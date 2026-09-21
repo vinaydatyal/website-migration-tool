@@ -262,3 +262,35 @@ RangeError: Maximum call stack size exceeded
 - Under **Authorized Redirect URIs**, you must add the exact callback path:
   - `https://website-migration-tool.up.railway.app/api/auth/google/callback`
   - `http://localhost:3001/api/auth/google/callback`
+
+---
+
+## 12. E-Commerce Crawl Resilience & Cross-Project Demo Data Isolation
+
+### Root Cause Analysis (Stale Demo URLs in New Projects)
+1. **Stale Cache Fallthrough on Failed Crawls**:
+   - In `UploadZone.tsx`, starting a live crawl did not invalidate existing in-memory `sourceEntries`.
+   - When an e-commerce site returned HTTP 403 (Cloudflare/Akamai bot detection), redirected to Shopify `/password`, or timed out, the crawl errored out, but `sourceEntries` remained populated with whatever was previously staged (e.g. 10 Apex demo URLs).
+   - Because `sourceEntries.length > 0`, the main action button `Audit Source Site (10 URLs)` remained enabled. Clicking it submitted the stale demo URLs under the newly named project (e.g., "RWO").
+2. **Unscoped Persistent Drafts**:
+   - `handleReset()` wiped component state but did not remove `uploadZone_draft` or `localforage` crawl caches (`uploadZone_sourceEntries`). Navigating back to `/` silently re-hydrated the previous entries.
+3. **Missing Domain Previews**:
+   - The UI previously only displayed a count (e.g. `10 URLs`) without revealing the domain (`apexathletics.com`), obscuring that stale demo URLs were active.
+
+### Implemented Solutions & Safeguards
+1. **Immediate State & Cache Invalidation on Crawl**:
+   - `handleCrawl()` in `UploadZone.tsx` immediately resets `sourceEntries`/`targetEntries` to `null` and purges their `localforage` records so failed or in-progress crawls can never fall back to stale or demo data.
+2. **Full Storage Purge on "New Blank Project"**:
+   - `handleReset()` in `App.tsx` explicitly purges `uploadZone_draft`, `uploadZone_sourceEntries`, and `uploadZone_targetEntries` from both `localStorage` and `localforage`.
+3. **Staged Domain Chips & Clear Buttons**:
+   - Both CSV and Crawl cards now display the detected primary domain (e.g., `Domain: apexathletics.com`), provide a dedicated **"🗑️ Clear"** button, and display a prominent warning banner if the staged domain does not match the entered crawl URL.
+4. **Demo Dataset Isolation**:
+   - Demo projects are flagged with `isDemo: true`.
+   - The Navbar renders a persistent `DEMO DATASET` badge instead of `AUTOSAVED`.
+   - Attempting to run analysis with demo data under a custom project name presents an explicit confirmation dialog.
+   - The onboarding demo button is renamed from generic `"Load E-Commerce Demo Dataset"` to `"Load Demo Sample (Apex Athletics)"`.
+5. **Crawler Hardening for E-Commerce**:
+   - **Cloudflare / 403 Bot Detection**: Emits an actionable event advising users to export from Screaming Frog and upload CSV if automated crawling is blocked.
+   - **Shopify `/password` Detection**: Alerts users when a storefront is password-gated.
+   - **Built-in Faceted Parameter Exclusions**: Automatically excludes query parameter loops (`cart`, `checkout`, `sort_by`, `add-to-cart`, `variant=`) from exploding crawl depth.
+

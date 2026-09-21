@@ -41,6 +41,7 @@ interface NavbarProps {
   setProjectName?: (name: string) => void;
   onSaveVersion?: () => void;
   onForceSave?: () => void;
+  isDemo?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -59,6 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setProjectName,
   onSaveVersion,
   onForceSave,
+  isDemo = false,
 }) => {
   const [isEditingName, setIsEditingName] = React.useState(false);
   const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -142,9 +144,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {projectName}
                     </span>
                   )}
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider border border-slate-200 dark:border-transparent">
-                    Autosaved
-                  </span>
+                  {isDemo ? (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider border border-amber-500/30 shadow-sm animate-pulse" title="Sample demo data is loaded. Use 'New Blank Project' to audit real sites.">
+                      Demo Dataset
+                    </span>
+                  ) : (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider border border-slate-200 dark:border-transparent">
+                      Autosaved
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center space-x-1.5 px-1">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-brand-500">MigrateShield Pro</span>

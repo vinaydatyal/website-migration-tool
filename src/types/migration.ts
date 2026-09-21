@@ -146,6 +146,7 @@ export interface ProjectMetadata {
   semrushProjectId?: string;
   baselineIndexedPages?: number;
   baselineOrganicClicks?: number;
+  isDemo?: boolean;
 }
 
 export interface MigrationProject {
@@ -167,6 +168,7 @@ export interface MigrationProject {
   confidenceThreshold: number; // default 75
   createdAt: string;
   updatedAt: string;
+  isDemo?: boolean;
 }
 
 export type ExportFormat = 

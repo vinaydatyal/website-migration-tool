@@ -210,12 +210,12 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   const enqueued = new Set([...visited, ...toVisit.map(item => normalizeUrl(item?.url)).filter(Boolean)]);
   
   let exclusionRegex = null;
-  if (config?.exclusions) {
-    try {
-      exclusionRegex = new RegExp(config.exclusions, 'i');
-    } catch(e) {
-      console.error('Invalid exclusion regex:', e);
-    }
+  const defaultEcommerceExclusions = '\\/cart|\\/checkout|\\/my-account|\\?add-to-cart|\\?sort_by=|\\?filter\\.|\\?variant=';
+  const combinedExclusions = config?.exclusions ? `${config.exclusions}|${defaultEcommerceExclusions}` : defaultEcommerceExclusions;
+  try {
+    exclusionRegex = new RegExp(combinedExclusions, 'i');
+  } catch(e) {
+    console.error('Invalid exclusion regex:', e);
   }
   
   let domain;
@@ -449,6 +449,19 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         const statusCode = response ? response.status() : 200;
         
         if (statusCode >= 400) {
+          const isBlocked = statusCode === 403;
+          if (isBlocked && crawledCount <= 2) {
+            onProgress({
+              type: 'progress',
+              message: `⚠️ HTTP 403 Forbidden / Anti-Bot protection detected. Host may require a Screaming Frog CSV export.`,
+              current: crawledCount,
+              total: currentDiscovered,
+              discovered: currentDiscovered,
+              queued: toVisit.length,
+              maxPages
+            });
+          }
+
           results.push({
             url: currentItem.normalized,
             redirectUrl: (finalLandedUrl && finalLandedUrl !== currentItem.normalized) ? finalLandedUrl : undefined,
@@ -459,6 +472,20 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           // Extract DOM metadata using resilient safeExtractMetadata
           const data = await safeExtractMetadata(workerPage);
           
+          const isPasswordPage = (finalLandedUrl && finalLandedUrl.endsWith('/password')) || 
+                                 (data.title && data.title.toLowerCase().includes('password') && (data.title.toLowerCase().includes('store') || data.title.toLowerCase().includes('opening soon')));
+          if (isPasswordPage && crawledCount <= 2) {
+            onProgress({
+              type: 'progress',
+              message: `⚠️ Storefront is password protected (/password). Please enter password in Crawl Settings.`,
+              current: crawledCount,
+              total: currentDiscovered,
+              discovered: currentDiscovered,
+              queued: toVisit.length,
+              maxPages
+            });
+          }
+
           results.push({
             url: currentItem.normalized,
             redirectUrl: (finalLandedUrl && finalLandedUrl !== currentItem.normalized) ? finalLandedUrl : undefined,

@@ -11,7 +11,9 @@ import {
   Settings,
   ShieldAlert,
   Cookie,
-  UserCircle2
+  UserCircle2,
+  Trash2,
+  Globe
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import localforage from 'localforage';
@@ -93,6 +95,61 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const getEntriesDomain = (entries: CrawlEntry[] | null): string | null => {
+    if (!entries || entries.length === 0) return null;
+    for (const e of entries) {
+      if (e.url) {
+        try {
+          return new URL(e.url).hostname;
+        } catch {}
+      }
+    }
+    return null;
+  };
+
+  const getUrlHostname = (urlStr: string): string | null => {
+    if (!urlStr) return null;
+    try {
+      return new URL(urlStr).hostname;
+    } catch {
+      return null;
+    }
+  };
+
+  const sourceDomain = getEntriesDomain(sourceEntries);
+  const targetDomain = getEntriesDomain(targetEntries);
+
+  const sourceUrlDomain = getUrlHostname(sourceUrl);
+  const targetUrlDomain = getUrlHostname(targetUrl);
+
+  const sourceDomainMismatch = Boolean(sourceUrlDomain && sourceDomain && sourceUrlDomain !== sourceDomain);
+  const targetDomainMismatch = Boolean(targetUrlDomain && targetDomain && targetUrlDomain !== targetDomain);
+
+  const handleClearEntries = (type: 'source' | 'target') => {
+    if (type === 'source') {
+      setSourceEntries(null);
+      setSourceFile(null);
+      localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+      setCrawlProgress(prev => {
+        const next = { ...prev };
+        delete next.source;
+        return next;
+      });
+      if (sourceInputRef.current) sourceInputRef.current.value = '';
+    } else {
+      setTargetEntries(null);
+      setTargetFile(null);
+      localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+      setCrawlProgress(prev => {
+        const next = { ...prev };
+        delete next.target;
+        return next;
+      });
+      if (targetInputRef.current) targetInputRef.current.value = '';
+    }
+    toast.success(`Cleared staged ${type === 'source' ? 'Old Site' : 'New Site'} URLs.`);
   };
 
   const handleFileChange = async (file: File, type: 'source' | 'target' | 'analytics') => {
@@ -220,6 +277,15 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
 
   const handleStartAnalysis = async () => {
     if ((sourceEntries || targetEntries) && (inputMode === 'crawl' || sourceFile || targetFile || sourceEntries || targetEntries)) {
+      // Guard against accidental demo dataset submission into custom named projects
+      const isStagedDemo = (sourceEntries?.some(e => e.url?.includes('apexathletics.com')) || targetEntries?.some(e => e.url?.includes('apexathletics.io')));
+      if (isStagedDemo && projectName && projectName !== 'Apex Athletics Demo' && projectName !== 'Untitled Project') {
+        const confirmed = window.confirm(
+          `Notice: Staged URLs are from the sample demo dataset (apexathletics.com), but your project is named "${projectName}".\n\nClick OK to proceed with demo data, or Cancel to clear it and enter your real website.`
+        );
+        if (!confirmed) return;
+      }
+
       setIsProcessing(true);
       
       let finalSourceEntries = sourceEntries ? [...sourceEntries] : [];
@@ -470,7 +536,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       } else if (data.type === 'error') {
         eventSource.close();
         setError(`Crawl failed for ${url}: ${data.message}`);
-        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'error' }}));
+        setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'error', message: data.message }}));
+        if (type === 'source') {
+          setSourceEntries(null);
+          localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+        } else {
+          setTargetEntries(null);
+          localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+        }
         setIsProcessing(false);
       }
     };
@@ -487,6 +560,17 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
     if (!url) return;
     setIsProcessing(true);
     setError(null);
+
+    // Invalidate stale staged entries immediately so failed crawls cannot fall back to stale or demo data
+    if (type === 'source') {
+      setSourceEntries(null);
+      setSourceFile(null);
+      localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+    } else {
+      setTargetEntries(null);
+      setTargetFile(null);
+      localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+    }
 
     try {
       const response = await fetch('/api/crawl', {
@@ -669,6 +753,22 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                     {sourceEntries?.length.toLocaleString()} URLs
                   </span>
                 </div>
+                {sourceDomain && (
+                  <div className="flex items-center justify-between px-1 text-xs text-slate-400">
+                    <span className="flex items-center space-x-1.5">
+                      <Globe className="h-3.5 w-3.5 text-brand-400" />
+                      <span>Domain: <strong className="text-slate-200 font-mono">{sourceDomain}</strong></span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleClearEntries('source')}
+                      className="text-red-400 hover:text-red-300 text-[11px] font-medium flex items-center space-x-1 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => sourceInputRef.current?.click()}
@@ -749,6 +849,22 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                     {targetEntries?.length.toLocaleString()} URLs
                   </span>
                 </div>
+                {targetDomain && (
+                  <div className="flex items-center justify-between px-1 text-xs text-slate-400">
+                    <span className="flex items-center space-x-1.5">
+                      <Globe className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Domain: <strong className="text-slate-200 font-mono">{targetDomain}</strong></span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleClearEntries('target')}
+                      className="text-red-400 hover:text-red-300 text-[11px] font-medium flex items-center space-x-1 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => targetInputRef.current?.click()}
@@ -892,16 +1008,33 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                     <CheckCircle2 className="h-4 w-4 text-brand-400 shrink-0" />
                     <span className="text-xs font-bold text-white uppercase tracking-wider">Crawl Summary</span>
                   </div>
-                  {crawlProgress.source?.summary?.queuedCount > 0 ? (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      Limit Capped ({crawlConfig.maxPages} max)
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/30">
-                      100% Crawled
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {sourceDomain && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 flex items-center space-x-1">
+                        <Globe className="h-2.5 w-2.5 text-brand-400" />
+                        <span>{sourceDomain}</span>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleClearEntries('source')}
+                      className="text-[11px] text-red-400 hover:text-red-300 flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                      title="Clear staged source crawl"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
                 </div>
+
+                {sourceDomainMismatch && (
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-start space-x-2">
+                    <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Domain Mismatch:</strong> Staged URLs belong to <code className="font-mono">{sourceDomain}</code>, but entered URL is <code className="font-mono">{sourceUrlDomain}</code>. Click <strong>Clear</strong> to crawl the new site.
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
@@ -1056,16 +1189,33 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
                     <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                     <span className="text-xs font-bold text-white uppercase tracking-wider">Crawl Summary</span>
                   </div>
-                  {crawlProgress.target?.summary?.queuedCount > 0 ? (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      Limit Capped ({crawlConfig.maxPages} max)
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                      100% Crawled
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {targetDomain && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 flex items-center space-x-1">
+                        <Globe className="h-2.5 w-2.5 text-emerald-400" />
+                        <span>{targetDomain}</span>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleClearEntries('target')}
+                      className="text-[11px] text-red-400 hover:text-red-300 flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                      title="Clear staged target crawl"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
                 </div>
+
+                {targetDomainMismatch && (
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-start space-x-2">
+                    <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Domain Mismatch:</strong> Staged URLs belong to <code className="font-mono">{targetDomain}</code>, but entered URL is <code className="font-mono">{targetUrlDomain}</code>. Click <strong>Clear</strong> to crawl the new site.
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
@@ -1531,7 +1681,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
           className="w-full sm:w-auto px-6 py-3.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700/80 flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm"
         >
           <Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400" />
-          <span>Load E-Commerce Demo Dataset</span>
+          <span>Load Demo Sample (Apex Athletics)</span>
         </button>
       </div>
 
