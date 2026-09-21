@@ -562,19 +562,25 @@ export function App() {
     }
   };
 
-  const handleReset = async () => {
-    if (!window.confirm('Are you sure you want to start a new project? Any unsaved changes will be lost.')) return;
+  const handleReset = async (): Promise<boolean> => {
+    if (!window.confirm('Are you sure you want to start a new project? Any unsaved changes will be lost.')) return false;
     
-    // Purge cached upload draft and uncommitted staged entries completely
+    // Purge cached upload draft, datasource drafts, and uncommitted staged entries completely
     try {
       localStorage.removeItem('uploadZone_draft');
+      localStorage.removeItem('dataSources_draft');
       await localforage.removeItem('uploadZone_sourceEntries');
       await localforage.removeItem('uploadZone_targetEntries');
+      if (projectId) {
+        await localforage.removeItem(`uploadZone_sourceEntries_${projectId}`);
+        await localforage.removeItem(`uploadZone_targetEntries_${projectId}`);
+      }
     } catch (e) {
       console.error('Failed to clean up uploadZone storage:', e);
     }
 
-    setProjectId(crypto.randomUUID());
+    const newId = crypto.randomUUID();
+    setProjectId(newId);
     setProjectName('Untitled Project');
     setProjectProfile('UNKNOWN');
     setSourceEntries(null);
@@ -586,6 +592,8 @@ export function App() {
     setProjectMetadata({});
     setResolvedDiscrepancies({});
     navigate('/');
+    toast.success('Started a new blank project');
+    return true;
   };
 
   const pushToHistory = () => {
@@ -1065,6 +1073,8 @@ export function App() {
 
               {(!hasData && !isRestoring) ? (
                 <UploadZone 
+                  key={projectId}
+                  projectId={projectId}
                   onDataParsed={handleDataParsed}
                   onLoadSample={handleLoadSample}
                   onSyncDraftData={(src, tgt) => {

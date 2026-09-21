@@ -300,3 +300,38 @@ RangeError: Maximum call stack size exceeded
    - **Cloudflare / 403 Bot Detection**: Emits an actionable event advising users to export from Screaming Frog and upload CSV if automated crawling is blocked.
    - **Shopify `/password` Detection**: Alerts users when a storefront is password-gated.
    - **Built-in Faceted Parameter Exclusions**: Automatically excludes query parameter loops (`cart`, `checkout`, `sort_by`, `add-to-cart`, `variant=`) from exploding crawl depth.
+
+---
+
+## 13. Clean-Slate "New Blank Project" Lifecycle & State Invalidation
+
+### Root Cause Analysis (Stale Crawl Residue in New Blank Projects)
+When creating a "New Blank Project", users encountered a state where the project name was "Untitled Project", but the target URL input still showed the previous site (`https://blinkesim-next-ikxr.vercel.`), the action button displayed "Restart Crawl", and the Crawl Summary box still showed previous stats ("Pages in Crawl: 735 found, Actually Crawled: 734 pages").
+
+1. **Component Instance Preservation (Missing `key={projectId}`)**:
+   - In `App.tsx`, `<UploadZone>` was rendered conditionally without a `key` prop tied to the active project.
+   - When `handleReset()` generated a new `projectId` via `crypto.randomUUID()`, React detected the same component type at the same JSX position and preserved the mounted `UploadZone` component instance.
+   - All internal `useState` hooks (`targetUrl`, `sourceUrl`, `crawlProgress`, `targetEntries`, `inputMode`) were retained in memory.
+2. **Auto-Save Draft Race Condition**:
+   - `handleReset()` called `localStorage.removeItem('uploadZone_draft')` and set `projectName = 'Untitled Project'`.
+   - In `UploadZone.tsx`, `projectName` was a dependency of the auto-save `useEffect`. When `projectName` changed, this effect fired immediately, re-serializing the lingering in-memory state (`targetUrl: 'https://blinkesim-next-ikxr.vercel.'` and the 734-page `crawlProgress`) right back into `localStorage`.
+3. **Unscoped `localforage` Storage**:
+   - Uncommitted crawl arrays were saved under global keys (`uploadZone_targetEntries`) without project isolation.
+4. **Lingering EventSource SSE Connections**:
+   - Active crawl connections lacked lifecycle ref tracking, potentially leaking background events across resets.
+
+### Implemented Solutions & Architecture Safeguards
+1. **Key-Driven Remounting (`key={projectId}`)**:
+   - Rendered `<UploadZone key={projectId} projectId={projectId} ... />` in `App.tsx`.
+   - When `handleReset()` generates a new `projectId`, React unmounts the previous component instance completely, wiping all internal state and mounting a pristine instance with clean initial defaults (`sourceUrl: ''`, `targetUrl: ''`, `targetEntries: null`, `crawlProgress: {}`, `inputMode: 'csv'`).
+2. **Project-Scoped IndexedDB Caches**:
+   - `localforage` cache keys are now isolated by project ID: `uploadZone_sourceEntries_${projectId}` and `uploadZone_targetEntries_${projectId}`.
+   - A new project receives a fresh UUID and will never read uncommitted entries from another project.
+3. **Draft Validation & Stale Legacy Purge on Mount**:
+   - In `UploadZone.tsx`, the mount effect checks draft provenance: if `parsed.projectId !== projectId`, or if an `Untitled Project` draft lacks a matching `projectId`, it immediately purges `uploadZone_draft` and all cached crawl entries, preventing stale data hydration.
+4. **Guarded Auto-Save**:
+   - `UploadZone` auto-save suppresses writing empty/blank drafts for `Untitled Project`, preventing ghost draft generation.
+5. **Lifecycle-Aware EventSource Management**:
+   - Added `eventSourceRef` in `UploadZone.tsx` to automatically close any active Server-Sent Events stream when the component unmounts or resets.
+6. **Comprehensive `handleReset` Cleanup**:
+   - `handleReset()` in `App.tsx` cleans both global (`uploadZone_draft`, `dataSources_draft`) and project-scoped storage before dispatching state resets and returning execution status to modals.

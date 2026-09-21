@@ -34,9 +34,17 @@ interface UploadZoneProps {
   onSyncDraftData?: (src: CrawlEntry[], tgt: CrawlEntry[]) => void;
   projectName?: string;
   setProjectName?: (name: string) => void;
+  projectId?: string;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSample, onSyncDraftData, projectName = 'Untitled Project', setProjectName }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ 
+  onDataParsed, 
+  onLoadSample, 
+  onSyncDraftData, 
+  projectName = 'Untitled Project', 
+  setProjectName,
+  projectId
+}) => {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [sourceEntries, setSourceEntries] = useState<CrawlEntry[] | null>(null);
@@ -62,6 +70,18 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   const [crawlProgress, setCrawlProgress] = useState<{source?: any, target?: any}>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+
+  const scopedSourceKey = projectId ? `uploadZone_sourceEntries_${projectId}` : 'uploadZone_sourceEntries';
+  const scopedTargetKey = projectId ? `uploadZone_targetEntries_${projectId}` : 'uploadZone_targetEntries';
+  const eventSourceRef = useRef<{ source?: EventSource, target?: EventSource }>({});
+
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current.source?.close();
+      eventSourceRef.current.target?.close();
+    };
+  }, []);
+
   const [crawlConfig, setCrawlConfig] = useState({
     authType: 'NONE' as 'NONE' | 'BASIC_AUTH' | 'COOKIE' | 'FORM_AUTH',
     loginUrl: '',
@@ -133,6 +153,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       setSourceEntries(null);
       setSourceFile(null);
       localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+      if (projectId) localforage.removeItem(`uploadZone_sourceEntries_${projectId}`).catch(() => {});
       setCrawlProgress(prev => {
         const next = { ...prev };
         delete next.source;
@@ -143,6 +164,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       setTargetEntries(null);
       setTargetFile(null);
       localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+      if (projectId) localforage.removeItem(`uploadZone_targetEntries_${projectId}`).catch(() => {});
       setCrawlProgress(prev => {
         const next = { ...prev };
         delete next.target;
@@ -181,11 +203,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       if (type === 'source') {
         setSourceFile(file);
         setSourceEntries(parsed);
-        localforage.setItem('uploadZone_sourceEntries', parsed).catch(() => {});
+        localforage.setItem(scopedSourceKey, parsed).catch(() => {});
       } else {
         setTargetFile(file);
         setTargetEntries(parsed);
-        localforage.setItem('uploadZone_targetEntries', parsed).catch(() => {});
+        localforage.setItem(scopedTargetKey, parsed).catch(() => {});
       }
     } catch (err: any) {
       setError(err.message || 'Failed to parse file.');
@@ -391,15 +413,36 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       const saved = localStorage.getItem('uploadZone_draft');
       if (saved) {
         const parsed = JSON.parse(saved);
+        
+        // Critical: Never restore draft from a different project into this one
+        const isMismatchedProject = Boolean(projectId && parsed.projectId && parsed.projectId !== projectId);
+        // Also discard legacy stale drafts for 'Untitled Project' that lack valid matching project IDs
+        const isStaleUntitledDraft = Boolean(
+          (projectName === 'Untitled Project' || !parsed.uploadProjectName || parsed.uploadProjectName === 'Untitled Project') &&
+          (!parsed.projectId || (projectId && parsed.projectId !== projectId))
+        );
+
+        if (isMismatchedProject || isStaleUntitledDraft) {
+          localStorage.removeItem('uploadZone_draft');
+          localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+          localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+          if (projectId) {
+            localforage.removeItem(`uploadZone_sourceEntries_${projectId}`).catch(() => {});
+            localforage.removeItem(`uploadZone_targetEntries_${projectId}`).catch(() => {});
+          }
+          setDraftRestored(true);
+          return;
+        }
+
         setSourceUrl(parsed.sourceUrl || '');
         setTargetUrl(parsed.targetUrl || '');
         setCrawlConfig(parsed.crawlConfig || crawlConfig);
         setInputMode(parsed.inputMode || 'csv');
-        if (parsed.uploadProjectName && setProjectName) {
+        if (parsed.uploadProjectName && setProjectName && parsed.uploadProjectName !== 'Untitled Project') {
           setProjectName(parsed.uploadProjectName);
         }
         
-        // Reconnect to active jobs
+        // Reconnect to active jobs only if still actively running
         if (parsed.crawlProgress) {
           setCrawlProgress(parsed.crawlProgress);
           if (parsed.crawlProgress.source?.jobId && parsed.crawlProgress.source?.status !== 'done' && parsed.crawlProgress.source?.status !== 'error') {
@@ -417,28 +460,35 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       } catch {}
     }
 
-    // Restore cached uncommitted crawl entries from localforage (quota-safe)
-    localforage.getItem<CrawlEntry[]>('uploadZone_sourceEntries').then(saved => {
+    // Restore cached uncommitted crawl entries from localforage (quota-safe & project-scoped)
+    localforage.getItem<CrawlEntry[]>(scopedSourceKey).then(saved => {
       if (saved && saved.length > 0) {
         setSourceEntries(saved);
       }
     }).catch(() => {});
 
-    localforage.getItem<CrawlEntry[]>('uploadZone_targetEntries').then(saved => {
+    localforage.getItem<CrawlEntry[]>(scopedTargetKey).then(saved => {
       if (saved && saved.length > 0) {
         setTargetEntries(saved);
       }
     }).catch(() => {});
 
     setDraftRestored(true);
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     // Auto-save draft on changes (only after initial restore)
     if (!draftRestored) return;
     
+    // Don't auto-save empty/blank state if project is Untitled Project with no URLs entered
+    if (projectName === 'Untitled Project' && !sourceUrl && !targetUrl && !sourceEntries && !targetEntries && Object.keys(crawlProgress).length === 0) {
+      localStorage.removeItem('uploadZone_draft');
+      return;
+    }
+
     // Only store lightweight metadata. Never store large crawl entries in localStorage (5MB limit)!
     const draft = {
+      projectId,
       sourceUrl,
       targetUrl,
       crawlConfig,
@@ -450,16 +500,19 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       localStorage.setItem('uploadZone_draft', JSON.stringify(draft));
     } catch (e) {
       console.warn('Could not save draft to localStorage (quota or restricted):', e);
-      // If quota exceeded, clean up old bloated draft to free storage
       try {
         localStorage.removeItem('uploadZone_draft');
       } catch {}
     }
-  }, [sourceUrl, targetUrl, crawlConfig, inputMode, crawlProgress, draftRestored, projectName]);
+  }, [sourceUrl, targetUrl, crawlConfig, inputMode, crawlProgress, draftRestored, projectName, projectId]);
 
   const connectToCrawlJob = (jobId: string, type: 'source' | 'target', url: string) => {
     setIsProcessing(true);
+    if (eventSourceRef.current[type]) {
+      eventSourceRef.current[type]?.close();
+    }
     const eventSource = new EventSource(`/api/crawl/events?jobId=${jobId}`);
+    eventSourceRef.current[type] = eventSource;
     
     // Ensure jobId is kept in state so it gets saved to draft
     setCrawlProgress(prev => ({
@@ -488,6 +541,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         }));
       } else if (data.type === 'done') {
         eventSource.close();
+        delete eventSourceRef.current[type];
         
         // Ensure crawled entries have normalizedPath populated (crawler.js doesn't provide it)
         const entries = (data.results || []).map((entry: any) => {
@@ -524,26 +578,32 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
         }));
         if (type === 'source') {
           setSourceEntries(entries);
+          localforage.setItem(scopedSourceKey, entries).catch(() => {});
           localforage.setItem('uploadZone_sourceEntries', entries).catch(() => {});
         } else {
           setTargetEntries(entries);
+          localforage.setItem(scopedTargetKey, entries).catch(() => {});
           localforage.setItem('uploadZone_targetEntries', entries).catch(() => {});
         }
         setIsProcessing(false);
       } else if (data.type === 'paused') {
         eventSource.close();
+        delete eventSourceRef.current[type];
         setCrawlProgress(prev => ({...prev, [type]: { ...prev[type], jobId, status: 'paused', message: data.message }}));
         setIsProcessing(false);
       } else if (data.type === 'error') {
         eventSource.close();
+        delete eventSourceRef.current[type];
         setError(`Crawl failed for ${url}: ${data.message}`);
         setCrawlProgress(prev => ({...prev, [type]: { jobId, status: 'error', message: data.message }}));
         if (type === 'source') {
           setSourceEntries(null);
           localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+          if (projectId) localforage.removeItem(scopedSourceKey).catch(() => {});
         } else {
           setTargetEntries(null);
           localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+          if (projectId) localforage.removeItem(scopedTargetKey).catch(() => {});
         }
         setIsProcessing(false);
       }
@@ -567,10 +627,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
       setSourceEntries(null);
       setSourceFile(null);
       localforage.removeItem('uploadZone_sourceEntries').catch(() => {});
+      if (projectId) localforage.removeItem(scopedSourceKey).catch(() => {});
     } else {
       setTargetEntries(null);
       setTargetFile(null);
       localforage.removeItem('uploadZone_targetEntries').catch(() => {});
+      if (projectId) localforage.removeItem(scopedTargetKey).catch(() => {});
     }
 
     try {
@@ -594,6 +656,10 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onDataParsed, onLoadSamp
   };
 
   const handleStopCrawl = async (type: 'source' | 'target') => {
+    if (eventSourceRef.current[type]) {
+      eventSourceRef.current[type]?.close();
+      delete eventSourceRef.current[type];
+    }
     const jobId = crawlProgress[type]?.jobId;
     if (!jobId) return;
     

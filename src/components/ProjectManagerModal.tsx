@@ -20,7 +20,7 @@ interface ProjectManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoadProject: (project: MigrationProject) => void;
-  onNewProject: () => void;
+  onNewProject: () => Promise<boolean> | boolean | void;
   currentProjectId: string | null;
 }
 
@@ -119,9 +119,11 @@ export const ProjectManagerModal: React.FC<ProjectManagerModalProps> = ({
         {/* Action Bar */}
         <div className="p-4 bg-slate-900/50 border-b border-slate-800 flex justify-end">
           <button
-            onClick={() => {
-              onNewProject();
-              onClose();
+            onClick={async () => {
+              const res = await onNewProject();
+              if (res !== false) {
+                onClose();
+              }
             }}
             className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-brand-500 text-slate-950 hover:bg-brand-400 shadow-md shadow-brand-500/20 transition-all cursor-pointer"
           >
