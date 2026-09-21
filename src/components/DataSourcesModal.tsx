@@ -429,6 +429,27 @@ export const DataSourcesModal: React.FC<Props> = ({
     }
   };
 
+  // Returns true if there is staged data that hasn't been committed to the app yet
+  const hasPendingUncommittedData = () => {
+    const srcPending = stagedSourceEntries?.length && stagedSourceEntries.length !== (sourceEntries?.length ?? 0);
+    const tgtPending = stagedTargetEntries?.length && stagedTargetEntries.length !== (targetEntries?.length ?? 0);
+    return !!(srcPending || tgtPending);
+  };
+
+  const handleCloseWithGuard = () => {
+    if (hasPendingUncommittedData()) {
+      const confirmed = window.confirm(
+        'You have crawl data that hasn\'t been applied yet.\n\n' +
+        'Click OK to apply it now (Smart Merge), or Cancel to discard it and close.'
+      );
+      if (confirmed) {
+        handleApplySmartMerge();
+        return;
+      }
+    }
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   const handleFileChange = async (file: File, type: 'source' | 'target') => {
@@ -639,7 +660,7 @@ export const DataSourcesModal: React.FC<Props> = ({
             </p>
           </div>
           <button 
-            onClick={onClose}
+            onClick={handleCloseWithGuard}
             className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
@@ -856,7 +877,11 @@ export const DataSourcesModal: React.FC<Props> = ({
                             <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
                             <div className="flex items-baseline space-x-1 mt-0.5">
                               <span className="text-base font-bold text-slate-200 font-mono">
-                                {crawlProgress.source?.summary?.totalDiscovered ?? crawlProgress.source?.total ?? 0}
+                                {Math.max(
+                                  crawlProgress.source?.summary?.totalDiscovered ?? 0,
+                                  crawlProgress.source?.summary?.crawledCount ?? 0,
+                                  stagedSourceEntries?.length ?? 0
+                                )}
                               </span>
                               <span className="text-[10px] text-slate-500">found</span>
                             </div>
@@ -865,7 +890,7 @@ export const DataSourcesModal: React.FC<Props> = ({
                             <span className="block text-[10px] text-brand-400 font-medium">Actually Crawled</span>
                             <div className="flex items-baseline space-x-1 mt-0.5">
                               <span className="text-base font-bold text-brand-400 font-mono">
-                                {crawlProgress.source?.summary?.crawledCount ?? crawlProgress.source?.current ?? 0}
+                                {stagedSourceEntries?.length ?? crawlProgress.source?.summary?.crawledCount ?? crawlProgress.source?.current ?? 0}
                               </span>
                               <span className="text-[10px] text-slate-400">pages</span>
                             </div>
@@ -1047,7 +1072,11 @@ export const DataSourcesModal: React.FC<Props> = ({
                             <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
                             <div className="flex items-baseline space-x-1 mt-0.5">
                               <span className="text-base font-bold text-slate-200 font-mono">
-                                {crawlProgress.target?.summary?.totalDiscovered ?? crawlProgress.target?.total ?? 0}
+                                {Math.max(
+                                  crawlProgress.target?.summary?.totalDiscovered ?? 0,
+                                  crawlProgress.target?.summary?.crawledCount ?? 0,
+                                  stagedTargetEntries?.length ?? 0
+                                )}
                               </span>
                               <span className="text-[10px] text-slate-500">found</span>
                             </div>
@@ -1056,7 +1085,7 @@ export const DataSourcesModal: React.FC<Props> = ({
                             <span className="block text-[10px] text-emerald-400 font-medium">Actually Crawled</span>
                             <div className="flex items-baseline space-x-1 mt-0.5">
                               <span className="text-base font-bold text-emerald-400 font-mono">
-                                {crawlProgress.target?.summary?.crawledCount ?? crawlProgress.target?.current ?? 0}
+                                {stagedTargetEntries?.length ?? crawlProgress.target?.summary?.crawledCount ?? crawlProgress.target?.current ?? 0}
                               </span>
                               <span className="text-[10px] text-slate-400">pages</span>
                             </div>

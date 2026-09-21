@@ -551,7 +551,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   const workers = Array.from({ length: maxConcurrency }, (_, id) => runWorker(id));
   await Promise.all(workers);
 
-  const totalDiscovered = visited.size + toVisit.length;
+  const totalDiscovered = Math.max(visited.size + toVisit.length, crawledCount);
   const queuedCount = toVisit.length;
   const maxPagesReached = crawledCount >= maxPages;
 
