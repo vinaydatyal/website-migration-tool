@@ -408,3 +408,38 @@ When users crawled both the Old Site (`roofwindowoutlet.co.uk`, 475 pages) and t
    - Ensured `handleUpdateTargetData` explicitly calls `saveProjectToIndexedDB`.
 4. **UploadZone Target Crawl Safeguard**:
    - Added confirmation safeguard in `UploadZone.tsx` alerting users if a Target URL is entered but not crawled before starting analysis.
+
+---
+
+## 8. Bug Fix: "Source-Only Audit" Toast Despite Completed Target Crawl (Sep 2026)
+
+### Symptoms
+- Dashboard showed: `"Running Source-Only Audit: 0 Target URLs were provided. All 475 URLs will be marked as UNMAPPED."`
+- Target crawl showed as completed (382 pages) in the Manage Data Sources modal.
+- Closing the modal via the **X button** discarded staged target data silently.
+
+### Root Cause
+- The X (close) button in `DataSourcesModal.tsx` called `onClose()` directly without checking if there was uncommitted staged data.
+- A completed live crawl stores results in `stagedTargetEntries` (modal-local state). This data is only committed to the app when the user explicitly clicks **"Run Smart Merge"** in the action bar.
+- When the user closed the modal using X after a crawl, `stagedTargetEntries` was discarded. The app's `targetEntries` remained empty → Source-Only Audit triggered on next run.
+
+### Fix (`src/components/DataSourcesModal.tsx`)
+- Added `hasPendingUncommittedData()` helper comparing staged vs. committed entry counts.
+- Added `handleCloseWithGuard()` which intercepts the X button: if uncommitted data exists, displays a `window.confirm()` prompt offering to auto-apply (Smart Merge) before closing.
+- Cancel on the prompt discards the staged data and closes normally.
+
+---
+
+## 9. Bug Fix: "Actually Crawled" > "Pages in Crawl" Discrepancy (Sep 2026)
+
+### Symptoms
+- Crawl summary in the modal showed impossible values: "313 Pages in Crawl" / "382 Actually Crawled"
+- `crawledCount` (number of pages the crawler attempted) > `totalDiscovered` (unique URLs found).
+
+### Root Cause
+1. **Server-side (`server/crawler.js`)**: `totalDiscovered = visited.size + toVisit.length`. At crawl end, `toVisit` is empty, so `totalDiscovered = visited.size`. However, `crawledCount` can exceed `visited.size` because the error path (lines ~527-541) pushes failed URLs into `results` without adding them to `visited`, creating a mismatch.
+2. **Client-side display**: The "Pages in Crawl" stat used raw `totalDiscovered` / `summary.totalDiscovered`, while "Actually Crawled" used `crawledCount` / `summary.crawledCount` — so the impossible state was shown verbatim.
+
+### Fix
+- **`server/crawler.js`**: Changed `totalDiscovered = visited.size + toVisit.length` to `Math.max(visited.size + toVisit.length, crawledCount)` ensuring `totalDiscovered >= crawledCount` always.
+- **`src/components/DataSourcesModal.tsx`**: Both source and target "Pages in Crawl" now use `Math.max(summary.totalDiscovered, summary.crawledCount, stagedEntries?.length)` — the actual `results` array length (stored in `stagedEntries`) is the most reliable ground truth. "Actually Crawled" uses `stagedEntries.length` as primary source.
