@@ -443,3 +443,39 @@ When users crawled both the Old Site (`roofwindowoutlet.co.uk`, 475 pages) and t
 ### Fix
 - **`server/crawler.js`**: Changed `totalDiscovered = visited.size + toVisit.length` to `Math.max(visited.size + toVisit.length, crawledCount)` ensuring `totalDiscovered >= crawledCount` always.
 - **`src/components/DataSourcesModal.tsx`**: Both source and target "Pages in Crawl" now use `Math.max(summary.totalDiscovered, summary.crawledCount, stagedEntries?.length)` — the actual `results` array length (stored in `stagedEntries`) is the most reliable ground truth. "Actually Crawled" uses `stagedEntries.length` as primary source.
+
+---
+
+## 10. Bug Fix: Source-Only Audit from SSE Large Payload Data Loss (Sep 2026)
+
+### Symptoms
+- Dashboard showed: `"Running Source-Only Audit: 0 Target URLs were provided. All 475 URLs will be marked as UNMAPPED."`
+- Target crawl showed "100% Crawled / 382 pages" in the modal summary
+- Action bar showed "Target: 0 URLs" despite the crawl being complete
+- Only happened on large crawls (300+ pages), not small test crawls
+
+### Root Cause
+The SSE `done` event in `server/index.js` included the **full results array** (`results: entries`) embedded in the event payload. For large crawls (300–500+ pages), this creates a 1–5MB+ JSON string in a single `res.write()` call.
+
+Browsers and proxy layers (especially Railway's reverse proxy) **silently truncate or drop oversized SSE event payloads**. The client receives the `done` event but `JSON.parse(event.data)` either fails silently OR parses successfully but `data.results` is `undefined` (truncated mid-array).
+
+Result: the `summary` object (which is tiny) is parsed correctly — crawl counts look right — but `entries` falls back to `data.results || []` → empty array → `stagedTargetEntries` is never populated → Source-Only Audit.
+
+### Fix
+
+**`server/index.js`**:
+- Removed `results` from the SSE `done` event payload entirely.
+- SSE `done` now only sends `{ type: 'done', summary }` (tiny payload, always succeeds).
+- Full results remain available in `activeJobs` for the `/api/crawl/results` HTTP endpoint.
+
+**`src/components/DataSourcesModal.tsx`** (`connectToCrawlJob`):
+- When `done` event fires, immediately triggers a separate `fetch('/api/crawl/results?jobId=...')` HTTP request to download full results.
+- Shows a `fetching_results` intermediate state with a spinner ("Downloading 382 crawl results...").
+- On HTTP success, populates `stagedEntries` and saves to localforage normally.
+- On HTTP failure (server restarted, job gone), resets `crawlProgress` to null and shows the stale warning.
+
+**Stale State Detector** (`src/components/DataSourcesModal.tsx`):
+- Added `staleWarning` state and a `useEffect` that runs 2.5s after `draftRestored`.
+- If `crawlProgress[type].status === 'done'` but `stagedEntries` is still empty, resets progress to null and sets `staleWarning[type] = true`.
+- Shows an amber warning box: "Previous crawl data was lost. Please run a new crawl."
+- This handles the case where the user reopens the modal after a server restart.
