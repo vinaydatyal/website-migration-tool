@@ -1,6 +1,6 @@
 import * as loader from "@assemblyscript/loader";
 import { CrawlEntry, MatchStrategy, UrlMapping, MappingStatus, ParityDiscrepancy } from '../types/migration';
-import { TargetCandidateIndex, extractTokens, tokenJaccardSimilarity, calculatePenalties, stringSimilarity, calculateRiskScore } from '../utils/matcher';
+import { TargetCandidateIndex, extractTokens, tokenJaccardSimilarity, calculatePenalties, stringSimilarity, calculateRiskScore, normalizeDashes } from '../utils/matcher';
 import { evaluateParityDiscrepancies } from '../utils/parityAuditor';
 
 let wasmModule: any = null;
@@ -174,6 +174,17 @@ self.onmessage = async (e: MessageEvent) => {
           }
         }
 
+        // TIER 2b: Exact H1 match (catches cases where URL structure changed but H1 is identical)
+        if (!bestTarget && matchSource.h1) {
+          const exactH1Target = index.findExactH1(matchSource.h1);
+          if (exactH1Target) {
+            bestTarget = exactH1Target;
+            confidenceScore = 96;
+            strategy = 'EXACT_TITLE_H1';
+            if (!isNonCanonical) reasons.push('Identical H1 heading matched');
+          }
+        }
+
         // TIER 3: Fast Fuzzy Token & String Similarity (WASM ACCELERATED)
         if (!bestTarget) {
           const candidates = index.getCandidates(matchSource);
@@ -183,34 +194,53 @@ self.onmessage = async (e: MessageEvent) => {
 
           const srcPathTokens = extractTokens(matchSource.normalizedPath);
           const srcTitleTokens = extractTokens(matchSource.title);
-          const srcAllTokensSet = new Set(extractTokens(matchSource.normalizedPath + ' ' + matchSource.title));
+          const srcH1Tokens = extractTokens(matchSource.h1);
+          const srcAllTokensSet = new Set(extractTokens(matchSource.normalizedPath + ' ' + matchSource.title + ' ' + matchSource.h1));
 
           for (const candidate of candidates) {
             const cached = index.entryTokensCache.get(candidate.id);
             const candPathTokens = cached ? cached.pathTokens : extractTokens(candidate.normalizedPath);
             const candTitleTokens = cached ? cached.titleTokens : extractTokens(candidate.title);
-            const candAllTokensSet = cached ? cached.allTokensSet : new Set(extractTokens(candidate.normalizedPath + ' ' + candidate.title));
+            const candH1Tokens = extractTokens(candidate.h1);
+            const candAllTokensSet = cached ? cached.allTokensSet : new Set(extractTokens(candidate.normalizedPath + ' ' + candidate.title + ' ' + candidate.h1));
 
-            // Path similarity (WASM)
+            // Path similarity (WASM) — normalize dashes to prevent em-dash vs hyphen Levenshtein inflation
+            const normSrcPath = normalizeDashes(matchSource.normalizedPath);
+            const normCandPath = normalizeDashes(candidate.normalizedPath);
             const pathJaccard = tokenJaccardSimilarity(srcPathTokens, candPathTokens);
             let pathLevenshtein = 0;
             if (pathJaccard > 0.1 || candidates.length < 5) {
-              pathLevenshtein = wasmStringSimilarity(matchSource.normalizedPath, candidate.normalizedPath);
+              pathLevenshtein = wasmStringSimilarity(normSrcPath, normCandPath);
             }
             const pathScore = (pathJaccard * 0.7 + pathLevenshtein * 0.3) * 50;
 
-            // Title similarity (WASM)
+            // Title similarity (WASM) — normalize dashes
             let titleScore = 0;
             if (matchSource.title && candidate.title) {
+              const normSrcTitle = normalizeDashes(matchSource.title);
+              const normCandTitle = normalizeDashes(candidate.title);
               const titleJaccard = tokenJaccardSimilarity(srcTitleTokens, candTitleTokens);
               let titleLevenshtein = 0;
               if (titleJaccard > 0.1) {
-                titleLevenshtein = wasmStringSimilarity(matchSource.title, candidate.title);
+                titleLevenshtein = wasmStringSimilarity(normSrcTitle, normCandTitle);
               }
               titleScore = (titleJaccard * 0.7 + titleLevenshtein * 0.3) * 40;
             }
 
-            let totalScore = Math.round(pathScore + titleScore);
+            // H1 similarity — 10 pts max (bridges cases where title changed but H1 is stable)
+            let h1Score = 0;
+            if (matchSource.h1 && candidate.h1) {
+              const normSrcH1 = normalizeDashes(matchSource.h1);
+              const normCandH1 = normalizeDashes(candidate.h1);
+              const h1Jaccard = tokenJaccardSimilarity(srcH1Tokens, candH1Tokens);
+              let h1Levenshtein = 0;
+              if (h1Jaccard > 0.15) {
+                h1Levenshtein = wasmStringSimilarity(normSrcH1, normCandH1);
+              }
+              h1Score = (h1Jaccard * 0.7 + h1Levenshtein * 0.3) * 10;
+            }
+
+            let totalScore = Math.round(pathScore + titleScore + h1Score);
             const { penalty, reasons: penaltyReasons } = calculatePenalties(matchSource, candidate, srcAllTokensSet, candAllTokensSet);
             totalScore = Math.max(0, totalScore - penalty);
             
@@ -222,7 +252,7 @@ self.onmessage = async (e: MessageEvent) => {
               }
             } else if (profile === 'CMS_SWITCH') {
               // CMS switches inherently change paths. Boost score slightly if title/h1 are strong.
-              if (titleScore > 25) {
+              if (titleScore > 25 || h1Score > 5) {
                 totalScore += 5;
               }
             }
@@ -233,6 +263,7 @@ self.onmessage = async (e: MessageEvent) => {
               topCandidateReasons = [
                 `Path match: ${Math.round(pathScore)}/50 pts`,
                 matchSource.title ? `Title match: ${Math.round(titleScore)}/40 pts` : '',
+                matchSource.h1 && h1Score > 0 ? `H1 match: ${Math.round(h1Score)}/10 pts` : '',
                 ...penaltyReasons
               ].filter(Boolean);
             }
@@ -248,7 +279,7 @@ self.onmessage = async (e: MessageEvent) => {
 
         // TIER 4: Semantic TF-IDF Fallback
         if (!bestTarget) {
-          const srcTokens = extractTokens(matchSource.normalizedPath + ' ' + matchSource.title);
+          const srcTokens = extractTokens(matchSource.normalizedPath + ' ' + matchSource.title + ' ' + matchSource.h1);
           if (srcTokens.length > 0) {
             const srcTfIdf = computeTFIDF(srcTokens);
             let bestSemanticScore = 0;

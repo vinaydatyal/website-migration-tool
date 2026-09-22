@@ -17,11 +17,24 @@ const COMMON_GEO_TOKENS = new Set([
 ]);
 
 /**
- * Tokenizes a string (slug or title) into clean significant words
+ * Normalize all Unicode dash variants to a regular ASCII hyphen.
+ * Covers: en-dash (\u2013), em-dash (\u2014), figure dash (\u2012),
+ * horizontal bar (\u2015), small em-dash (\uFE58), fullwidth hyphen (\uFF0D).
+ * This prevents matching failures between old sites using em-dashes in URLs/titles
+ * and new sites using regular hyphens, or vice versa.
+ */
+export function normalizeDashes(text: string): string {
+  if (!text) return text;
+  return text.replace(/[\u2012\u2013\u2014\u2015\uFE58\uFF0D]/g, '-');
+}
+
+/**
+ * Tokenizes a string (slug or title) into clean significant words.
+ * Normalizes Unicode dashes before splitting.
  */
 export function extractTokens(text: string): string[] {
   if (!text) return [];
-  return text
+  return normalizeDashes(text)
     .toLowerCase()
     .replace(/[^a-z0-9\s-_/]/g, ' ')
     .split(/[\s-_/]+/)
@@ -60,8 +73,9 @@ export function levenshteinDistance(s1: string, s2: string): number {
 export function stringSimilarity(s1: string, s2: string): number {
   if (!s1 && !s2) return 1.0;
   if (!s1 || !s2) return 0.0;
-  const str1 = s1.toLowerCase().trim();
-  const str2 = s2.toLowerCase().trim();
+  // Normalize dashes before Levenshtein so en-dash vs hyphen doesn't inflate edit distance
+  const str1 = normalizeDashes(s1).toLowerCase().trim();
+  const str2 = normalizeDashes(s2).toLowerCase().trim();
   if (str1 === str2) return 1.0;
 
   const maxLen = Math.max(str1.length, str2.length);
