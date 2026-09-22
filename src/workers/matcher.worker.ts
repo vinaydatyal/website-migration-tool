@@ -285,7 +285,7 @@ self.onmessage = async (e: MessageEvent) => {
           reasons.push('No matching target page found above confidence threshold');
         }
 
-        const targetUrl = bestTarget ? bestTarget.url : '/';
+        const targetUrl = bestTarget ? bestTarget.url : '';
         const discrepancies: ParityDiscrepancy[] = bestTarget 
           ? evaluateParityDiscrepancies(source, bestTarget, profile)
           : [];
