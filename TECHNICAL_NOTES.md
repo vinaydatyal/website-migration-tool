@@ -508,3 +508,50 @@ Empty string correctly represents an unmapped URL. The `strategy: 'UNMAPPED'` fl
 
 ### File Changed
 - `src/workers/matcher.worker.ts` — line 288
+
+---
+
+## 12. Algorithm Improvement: H1 Scoring + Unicode Dash Normalization (Sep 2026)
+
+### Problem 1: H1 Was Indexed But Never Scored
+
+The `TargetCandidateIndex` indexed H1s (`exactH1Map`) and used them for candidate retrieval (`getCandidates`), but the actual scoring in Tier 3 only compared **path (50 pts)** and **title (40 pts)**. H1 was invisible to the score.
+
+The worker also never called `index.findExactH1()` despite the method existing.
+
+### Problem 2: Unicode Dash Mismatch Breaking Matches
+
+Old websites commonly use **en-dash `–` (U+2013)** or **em-dash `—` (U+2014)** in their page titles, meta tags, or even URL slugs copied from CMS content. New sites typically use regular **ASCII hyphen `-`**.
+
+In `stringSimilarity`, raw strings were compared character-by-character via Levenshtein. `"Roof–Windows"` vs `"Roof-Windows"` has an edit distance of 1 per dash character difference, which inflated the distance and lowered the similarity score below the matching threshold.
+
+In `extractTokens`, the regex `[^a-z0-9\s-_/]` strips non-ASCII characters to space — so tokens ended up the same (`["roof", "windows"]`). But Levenshtein on raw path/title strings was still affected.
+
+### Fixes
+
+**`src/utils/matcher.ts`**:
+- Added `normalizeDashes(text)` function that maps all Unicode dash variants (`–`, `—`, `‒`, `―`, `﹘`, `－`) to regular ASCII hyphen `-` before any comparison.
+- Applied in `extractTokens()` (pre-processing step before tokenizing).
+- Applied in `stringSimilarity()` (before Levenshtein computation).
+- Exported for use in the worker.
+
+**`src/workers/matcher.worker.ts`**:
+- **Tier 2b added**: After exact title match, now checks `index.findExactH1()`. If the source H1 exactly matches a target's H1, assigns confidence 96 with strategy `EXACT_TITLE_H1`.
+- **Tier 3 H1 score**: H1 Jaccard + Levenshtein similarity added as a **10-point signal** (path=50, title=40, H1=10 → max 100). Only fires when both source and target have an H1.
+- **Tier 4 TF-IDF**: Source token set now includes H1 tokens so semantic cosine similarity also leverages H1 content.
+- **Dash normalization in WASM calls**: `normalizeDashes()` applied to all strings passed to `wasmStringSimilarity()` for paths, titles, and H1s.
+
+### Scoring Breakdown (Updated)
+
+| Signal | Points | Notes |
+|---|---|---|
+| Path (Jaccard + Levenshtein) | 0–50 | Primary signal |
+| Title (Jaccard + Levenshtein) | 0–40 | Strong signal for CMS migrations |
+| H1 (Jaccard + Levenshtein) | 0–10 | Tiebreaker; especially useful when title has site name suffix |
+| **Max possible** | **100** | |
+| Geo penalty | −45 | Location mismatch |
+| Pagination mismatch | −35 | Page N mismatch |
+| Depth mismatch ≥2 levels | −15 | Structural mismatch |
+
+### Why No Meta Description?
+Meta descriptions are not included because they are frequently rephrased, A/B tested, or auto-generated from body content. They share vocabulary with many pages and would create false positive matches. H1 is a much stronger signal as it's typically the most literal representation of the page topic.
