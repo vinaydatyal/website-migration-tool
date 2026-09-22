@@ -479,3 +479,32 @@ Result: the `summary` object (which is tiny) is parsed correctly — crawl count
 - If `crawlProgress[type].status === 'done'` but `stagedEntries` is still empty, resets progress to null and sets `staleWarning[type] = true`.
 - Shows an amber warning box: "Previous crawl data was lost. Please run a new crawl."
 - This handles the case where the user reopens the modal after a server restart.
+
+---
+
+## 11. Bug Fix: Changing One 301 Target Changed All URLs (Sep 2026)
+
+### Symptoms
+- Editing any row's 301 Target URL caused all 475 rows to show the same target
+- Every row displayed "Mapped to 475 source URLs" badge
+- Screenshot showed all rows with `targetUrl: '/'` (homepage) and `MANUAL OVERRIDE` status
+
+### Root Cause
+**`src/workers/matcher.worker.ts` line 288:**
+```js
+// BEFORE (bug):
+const targetUrl = bestTarget ? bestTarget.url : '/';
+```
+When the matcher found no suitable match for a source URL (i.e., `bestTarget = null`), the mapping's `targetUrl` was set to `'/'` (the homepage) instead of `''` (empty/unmapped).
+
+**Effect**: All 475 source URLs that had no match (a common case when the target site has very different URL structure, or after a Source-Only Audit) got `targetUrl: '/'`. The `targetCount` map in `UrlMappingTable.tsx` then counted all 475 mappings pointing to `'/'`, displaying the "Mapped to 475 source URLs" badge on every row. The user's edit to one row looked like it was "changing all rows" — in reality, all rows already had the same broken initial value.
+
+### Fix
+```js
+// AFTER (fix):
+const targetUrl = bestTarget ? bestTarget.url : '';
+```
+Empty string correctly represents an unmapped URL. The `strategy: 'UNMAPPED'` flag already indicates the mapping has no target. Setting `targetUrl: ''` prevents false conflicts and ensures the Conflicts tab, targetCount badge, and action bar all show accurate data.
+
+### File Changed
+- `src/workers/matcher.worker.ts` — line 288
