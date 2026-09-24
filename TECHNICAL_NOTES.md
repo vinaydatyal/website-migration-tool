@@ -555,3 +555,49 @@ In `extractTokens`, the regex `[^a-z0-9\s-_/]` strips non-ASCII characters to sp
 
 ### Why No Meta Description?
 Meta descriptions are not included because they are frequently rephrased, A/B tested, or auto-generated from body content. They share vocabulary with many pages and would create false positive matches. H1 is a much stronger signal as it's typically the most literal representation of the page topic.
+
+---
+
+## 13. Bug Fix: All Rows Entering Edit Mode Simultaneously (Sep 2026)
+
+### Symptom
+Clicking the edit (pencil) button on any single row caused ALL 475 rows to simultaneously enter edit mode, showing input fields for every mapping. Saving one row's target URL appeared to change all rows.
+
+### Root Cause — Missing `id` Field in Crawler Output
+
+**`server/crawler.js`** — The `results.push({...})` call that builds each crawl entry never included an `id` field. The entry objects had `url`, `title`, `h1`, etc., but no `id`.
+
+**`src/workers/matcher.worker.ts`** — Each mapping is created with:
+```js
+id: `map_${source.id}`
+```
+Since `source.id` was `undefined` for every entry, **all 475 mappings received the identical ID: `"map_undefined"`**.
+
+**`src/components/UrlMappingTable.tsx`** — Edit mode is determined by:
+```js
+const isEditing = editingMappingId === m.id;
+```
+When any row's edit button was clicked, `editingMappingId` was set to `"map_undefined"`. Since every mapping had `id: "map_undefined"`, the condition returned `true` for all 475 rows simultaneously.
+
+### Secondary Bug — GET /api/crawl/results Returning Empty
+
+An earlier fix removed `results` from the SSE `done` event (Bug Fix #10) to avoid payload size limits. But `GET /api/crawl/results` still read from `doneEvent.results`, which was now always `undefined → []`. This caused crawl data to be empty even after successful crawls.
+
+### Fixes
+
+**`server/crawler.js`**:
+- Added `id: \`entry_${crawledCount}_${Date.now()}\`` to every `results.push({...})` call (both success and error paths).
+- This ensures every entry has a globally unique ID within a crawl session.
+
+**`server/index.js`**:
+- Results are now stored on `job.results = entries` when crawl completes.
+- `GET /api/crawl/results` reads from `job.results` instead of the non-existent `doneEvent.results`.
+
+**`src/workers/matcher.worker.ts`**:
+- Added URL-based fallback: `source.id ? \`map_${source.id}\` : \`map_url_${i}_${source.url...}\``
+- Ensures unique mapping IDs even for legacy crawl data without the `id` field.
+
+**`src/App.tsx`** — `deduplicateMappings()`:
+- Added duplicate ID detection and repair step.
+- If two loaded mappings share the same `id` (e.g. legacy `"map_undefined"` data), they are reassigned unique IDs based on index + source URL.
+- Prevents a corrupted saved project from causing the all-rows-in-edit-mode bug on reload.
