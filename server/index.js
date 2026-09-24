@@ -74,7 +74,11 @@ async function runCrawlJob(jobId, url, config, initialState = null) {
           successCount: entries.filter(r => r.statusCode && r.statusCode < 400).length,
           errorCount: entries.filter(r => !r.statusCode || r.statusCode >= 400).length
         };
-        activeJobs.get(jobId).events.push({ type: 'done', summary });
+        const job = activeJobs.get(jobId);
+        // Store results separately on the job object so GET /api/crawl/results can serve them.
+        // We do NOT embed results in the SSE 'done' event to avoid large payload truncation by proxies.
+        job.results = entries;
+        job.events.push({ type: 'done', summary });
         // NOTE: results are NOT included in the SSE event to avoid payload size limits.
         // The client fetches full results via GET /api/crawl/results?jobId=... after receiving 'done'.
       }
@@ -131,7 +135,8 @@ app.get('/api/crawl/results', verifyAuth, (req, res) => {
   const job = activeJobs.get(jobId);
   const doneEvent = job.events.find(e => e.type === 'done');
   if (doneEvent) {
-    return res.json({ status: 'done', results: doneEvent.results || [], summary: doneEvent.summary });
+    // Results are stored on job.results (not in the SSE done event, to avoid large payload issues)
+    return res.json({ status: 'done', results: job.results || [], summary: doneEvent.summary });
   }
   const errorEvent = job.events.find(e => e.type === 'error');
   if (errorEvent) {

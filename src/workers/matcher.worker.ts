@@ -345,7 +345,9 @@ self.onmessage = async (e: MessageEvent) => {
         const riskScore = calculateRiskScore(source, bestTarget, confidenceScore);
 
         mappings.push({
-          id: `map_${source.id}`,
+          // source.id is now always set by the crawler. Fall back to URL-based id for legacy
+          // crawl data that predates this fix, so IDs are never the same "map_undefined" string.
+          id: source.id ? `map_${source.id}` : `map_url_${i}_${source.url.replace(/[^a-z0-9]/gi, '_').substring(0, 60)}`,
           source,
           target: bestTarget,
           targetUrl,

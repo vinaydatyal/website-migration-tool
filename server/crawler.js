@@ -487,6 +487,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
           }
 
           results.push({
+            id: `entry_${crawledCount}_${Date.now()}`,
             url: currentItem.normalized,
             redirectUrl: (finalLandedUrl && finalLandedUrl !== currentItem.normalized) ? finalLandedUrl : undefined,
             title: data.title,
@@ -526,6 +527,7 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
         const existingIndex = results.findIndex(r => r.url === currentItem.normalized);
         if (existingIndex === -1) {
           results.push({
+            id: `entry_err_${crawledCount}_${Date.now()}`,
             url: currentItem.normalized,
             title: '',
             metaDescription: '',

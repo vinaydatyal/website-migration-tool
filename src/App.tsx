@@ -137,13 +137,23 @@ export function App() {
 
     const deduplicateMappings = (maps: any[]) => {
       if (!maps) return maps;
-      const seen = new Set<string>();
-      return maps.filter(m => {
+      const seenUrls = new Set<string>();
+      const seenIds = new Set<string>();
+      const deduped = maps.filter(m => {
         if (!m.source?.url) return false;
         const norm = m.source.url.trim().toLowerCase();
-        if (seen.has(norm)) return false;
-        seen.add(norm);
+        if (seenUrls.has(norm)) return false;
+        seenUrls.add(norm);
         return true;
+      });
+      // Repair duplicate or missing mapping IDs (e.g. legacy data where id was "map_undefined")
+      return deduped.map((m, idx) => {
+        if (!m.id || seenIds.has(m.id)) {
+          const safeUrl = m.source.url.replace(/[^a-z0-9]/gi, '_').substring(0, 60);
+          m = { ...m, id: `map_repaired_${idx}_${safeUrl}` };
+        }
+        seenIds.add(m.id);
+        return m;
       });
     };
 
