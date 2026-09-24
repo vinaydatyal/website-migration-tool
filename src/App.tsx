@@ -1165,7 +1165,7 @@ export function App() {
                   onUpdateThreshold={setConfidenceThreshold}
                   onUndo={handleUndoMapping}
                   canUndo={mappingsHistory.length > 0}
-                  onFilteredMappingsChange={setActiveFilteredMappings}
+                  onFilteredMappingsChange={(maps) => setActiveFilteredMappings(maps)}
                 />
               } />
 
