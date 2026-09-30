@@ -626,3 +626,14 @@ After a live crawl completed on the landing page cards in `UploadZone.tsx`, the 
    - `Pages in Crawl` now renders `Math.max(summary.totalDiscovered, summary.crawledCount, entries.length)`.
    - `Actually Crawled` uses `entries.length > 0 ? entries.length : summary.crawledCount`.
 
+
+
+## 15. Feature: Individual URL Recrawl (Sep 2026)
+
+### Description
+Added the ability to recrawl a single target URL directly from the URL mapping row in the UI. This is useful when a target URL was added manually or failed during the main crawl.
+
+### Changes
+1. **server/crawler.js**: Extracted single URL fetching logic into etchSingleUrl.
+2. **server/index.js**: Added POST /api/recrawl-url endpoint.
+3. **src/components/UrlMappingTableRow.tsx**: Added RefreshCw icon button next to the ping button. Hooked it to handleRecrawl which calls the new API and updates the row using onUpdateMapping.

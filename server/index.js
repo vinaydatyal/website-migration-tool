@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { crawlSite } from './crawler.js';
+import { crawlSite, fetchSingleUrl } from './crawler.js';
 import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
@@ -238,6 +238,17 @@ app.get('/api/ping-url', verifyAuth, async (req, res) => {
     res.json({ status: response.status, ok: response.ok });
   } catch (error) {
     res.json({ status: 500, ok: false, error: error.message });
+  }
+});
+
+app.post('/api/recrawl-url', verifyAuth, async (req, res) => {
+  const { url, config } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+  try {
+    const data = await fetchSingleUrl(url, config);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
