@@ -379,3 +379,48 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
   await browser.close();
   return results;
 }
+
+export async function fetchSingleUrl(url, config) {
+  const browser = await puppeteer.launch({
+    headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu'
+    ]
+  });
+  
+  try {
+    const page = await browser.newPage();
+    if (config?.ignoreRobots) {
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    }
+    const response = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    const metadata = await safeExtractMetadata(page);
+    return {
+      url: url,
+      normalizedPath: new URL(url).pathname,
+      statusCode: response ? response.status() : 200,
+      status: response && response.status() >= 400 ? 'ERROR' : 'OK',
+      contentType: response ? (response.headers()['content-type'] || 'text/html') : 'text/html',
+      ...metadata,
+      titleLength: metadata.title?.length || 0,
+      metaDescriptionLength: metadata.metaDescription?.length || 0,
+      metaRobots: '', // default
+      indexability: 'Indexable',
+      canonical: url,
+      inlinks: 0,
+      outlinks: metadata.links?.length || 0,
+      outgoingLinks: metadata.links || [],
+    };
+  } catch (e) {
+    throw e;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}

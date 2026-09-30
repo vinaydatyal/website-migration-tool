@@ -1,6 +1,6 @@
 import React from 'react';
 import { UrlMapping, CrawlEntry } from '../types/migration';
-import { CheckCircle2, Ban, Check, X, Copy, Loader2, Zap, Eye, EyeOff, Edit2, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Ban, Check, X, Copy, Loader2, Zap, Eye, EyeOff, Edit2, ExternalLink, RefreshCw } from 'lucide-react';
 
 interface Props {
   m: UrlMapping;
@@ -42,6 +42,7 @@ export const UrlMappingTableRow = React.memo(({
   const [customTargetInput, setCustomTargetInput] = React.useState('');
   const [pingStatus, setPingStatus] = React.useState<number | null>(null);
   const [isPinging, setIsPinging] = React.useState(false);
+  const [isRecrawling, setIsRecrawling] = React.useState(false);
   const [localNotes, setLocalNotes] = React.useState(m.notes || '');
 
   React.useEffect(() => {
@@ -63,6 +64,34 @@ export const UrlMappingTableRow = React.memo(({
       setIsPinging(false);
     }
   };
+
+  const handleRecrawl = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const urlToRecrawl = m.target?.url || m.targetUrl;
+    if (!urlToRecrawl || m.status === 'GONE_410') return;
+    setIsRecrawling(true);
+    try {
+      const res = await fetch('/api/recrawl-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlToRecrawl })
+      });
+      const data = await res.json();
+      if (data && !data.error && onUpdateMapping) {
+        onUpdateMapping(m.id, {
+           target: {
+             ...(m.target || { id: `manual_${Date.now()}` }),
+             ...data
+           }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to recrawl:', err);
+    } finally {
+      setIsRecrawling(false);
+    }
+  };
+
 
   React.useEffect(() => {
     if (isEditing) {
@@ -222,6 +251,14 @@ export const UrlMappingTableRow = React.memo(({
                         title="Ping URL"
                       >
                         {isPinging ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                      </button>
+                      <button 
+                        onClick={handleRecrawl}
+                        disabled={isRecrawling}
+                        className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 transition-colors"
+                        title="Recrawl Target URL"
+                      >
+                        {isRecrawling ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                       </button>
                       <a 
                         href={m.target?.url || m.targetUrl} 
