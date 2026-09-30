@@ -1,9 +1,16 @@
-import jwt from 'jsonwebtoken';
+import { createClient } from '@supabase/supabase-js';
 
-export const verifyAuth = (req, res, next) => {
-  // Allow bypassing auth in local dev if no JWT secret is set (optional)
-  if (!process.env.SUPABASE_JWT_SECRET) {
-    console.warn('WARNING: SUPABASE_JWT_SECRET is not set, bypassing auth check.');
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false }
+}) : null;
+
+export const verifyAuth = async (req, res, next) => {
+  // Allow bypassing auth in local dev if no Supabase URL/Key is set
+  if (!supabase) {
+    console.warn('WARNING: Supabase credentials not set, bypassing auth check.');
     return next();
   }
 
@@ -21,12 +28,17 @@ export const verifyAuth = (req, res, next) => {
   }
 
   try {
-    // Supabase signs their JWTs using the JWT secret
-    const decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET);
-    req.user = decoded; // Contains user info (sub is the user UUID)
+    // Validate token using Supabase Auth directly (supports both HS256 and ECC keys natively)
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      throw error || new Error('User not found');
+    }
+    
+    req.user = { sub: user.id }; // Normalize to match the decoded JWT format expected downstream
     next();
   } catch (error) {
-    console.error('JWT Verification Error:', error.message);
+    console.error('Auth Verification Error:', error.message);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };
