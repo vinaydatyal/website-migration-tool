@@ -678,17 +678,17 @@ export function App() {
       if (m.id === mappingId) {
         const updatedMapping = { ...m, ...updates };
         
-        // If targetUrl was updated, we need to recalculate the target object and parity discrepancies
-        if ('targetUrl' in updates && targetEntries) {
-          const newTargetUrl = updates.targetUrl;
-          const newTarget = newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null;
+        // If targetUrl or target was updated, we need to recalculate the target object and parity discrepancies
+        if (('targetUrl' in updates || 'target' in updates) && targetEntries) {
+          const newTargetUrl = 'targetUrl' in updates ? updates.targetUrl : (updates.target?.url || updates.target?.normalizedPath || m.targetUrl);
+          const newTarget = 'target' in updates ? (updates.target as CrawlEntry | null) : (newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null);
           
           updatedMapping.target = newTarget;
           
           if (!newTargetUrl) {
             updatedMapping.strategy = 'UNMAPPED';
             updatedMapping.status = 'NEEDS_REVIEW';
-          } else {
+          } else if ('targetUrl' in updates) {
             updatedMapping.strategy = 'MANUAL_OVERRIDE';
           }
           
@@ -748,16 +748,16 @@ export function App() {
         const updates = updatesMap.get(m.id)!;
         const updatedMapping = { ...m, ...updates };
         
-        if ('targetUrl' in updates && targetEntries) {
-          const newTargetUrl = updates.targetUrl;
-          const newTarget = newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null;
+        if (('targetUrl' in updates || 'target' in updates) && targetEntries) {
+          const newTargetUrl = 'targetUrl' in updates ? updates.targetUrl : (updates.target?.url || updates.target?.normalizedPath || m.targetUrl);
+          const newTarget = 'target' in updates ? (updates.target as CrawlEntry | null) : (newTargetUrl ? (targetEntries.find(t => t.url === newTargetUrl || t.normalizedPath === newTargetUrl) || null) : null);
           
           updatedMapping.target = newTarget;
 
           if (!newTargetUrl) {
             updatedMapping.strategy = 'UNMAPPED';
             updatedMapping.status = 'NEEDS_REVIEW';
-          } else {
+          } else if ('targetUrl' in updates) {
             updatedMapping.strategy = 'MANUAL_OVERRIDE';
           }
           
