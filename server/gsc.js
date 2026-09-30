@@ -94,7 +94,7 @@ export async function handleAuthCallback(req, res) {
       }
     } catch (e) {}
 
-    if (userId) {
+    if (userId && supabase) {
       // Upsert tokens into Supabase for BOTH services to avoid double authentication
       const upsertData = [
         { user_id: userId, service: 'gsc', tokens },
@@ -109,7 +109,7 @@ export async function handleAuthCallback(req, res) {
         console.error('Error saving tokens to Supabase:', error);
       }
     } else {
-      console.error('No userId found in OAuth state, tokens will not be saved to DB.');
+      console.error('No userId found in OAuth state or Supabase is not configured. Tokens will not be saved to DB.');
     }
 
     res.send(`

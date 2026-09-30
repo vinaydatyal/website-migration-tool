@@ -176,43 +176,91 @@ export const DataSourcesModal: React.FC<Props> = ({
       let ga4Data: any[] = [];
 
       if (gscConnected && selectedGscSite) {
-        const res = await fetch('/api/gsc/data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ siteUrl: selectedGscSite })
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Failed to fetch GSC data');
-        gscData = json.data || [];
+        try {
+          const res = await fetch('/api/gsc/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ siteUrl: selectedGscSite })
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed to fetch GSC data');
+          gscData = json.data || [];
+        } catch (e: any) {
+          console.error("GSC Fetch Error:", e);
+          setError(prev => prev ? `${prev} | GSC: ${e.message}` : `GSC Error: ${e.message}`);
+        }
       }
 
       if (ga4Connected && selectedGa4Property) {
-        const res = await fetch('/api/ga4/data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ propertyId: selectedGa4Property })
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Failed to fetch GA4 data');
-        ga4Data = json.data || [];
+        try {
+          const res = await fetch('/api/ga4/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ propertyId: selectedGa4Property })
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed to fetch GA4 data');
+          ga4Data = json.data || [];
+        } catch (e: any) {
+          console.error("GA4 Fetch Error:", e);
+          setError(prev => prev ? `${prev} | GA4: ${e.message}` : `GA4 Error: ${e.message}`);
+        }
       }
 
-      const gscMap = new Map(gscData.map(d => [d.url.replace(/\/$/, ''), d]));
-      const ga4Map = new Map(ga4Data.map(d => {
-        let u = d.url;
-        if (!u.startsWith('http')) {
-           // Basic normalization if it's just a path
-           u = (selectedGscSite.replace(/\/$/, '') + u).replace(/\/$/, '');
-        }
-        return [u, d];
-      }));
+      const gscMap = new Map();
+      gscData.forEach(d => {
+        const abs = d.url.replace(/\/$/, '');
+        gscMap.set(abs, d);
+        try {
+          const rel = new URL(d.url).pathname.replace(/\/$/, '') || '/';
+          gscMap.set(rel, d);
+        } catch (e) {}
+      });
 
-      const sourceUrlSet = new Set(sourceEntries.map(e => e.url.replace(/\/$/, '')));
+      const ga4Map = new Map();
+      ga4Data.forEach(d => {
+        let u = d.url;
+        let abs = u;
+        let rel = u;
+        
+        if (!u.startsWith('http')) {
+           rel = u.replace(/\/$/, '') || '/';
+           if (selectedGscSite) {
+              abs = (selectedGscSite.replace(/\/$/, '') + u).replace(/\/$/, '');
+           }
+        } else {
+           abs = u.replace(/\/$/, '');
+           try {
+              rel = new URL(u).pathname.replace(/\/$/, '') || '/';
+           } catch(e) {}
+        }
+        
+        ga4Map.set(abs, d);
+        ga4Map.set(rel, d);
+      });
+
+      const sourceUrlSet = new Set();
+      sourceEntries.forEach(e => {
+        const abs = e.url.replace(/\/$/, '');
+        sourceUrlSet.add(abs);
+        try {
+          if (abs.startsWith('http')) {
+            sourceUrlSet.add(new URL(abs).pathname.replace(/\/$/, '') || '/');
+          } else {
+            sourceUrlSet.add(abs.startsWith('/') ? abs : `/${abs}`);
+          }
+        } catch (err) {}
+      });
 
       const enriched = sourceEntries.map(entry => {
         const cleanUrl = entry.url.replace(/\/$/, '');
-        const gscRow = gscMap.get(cleanUrl) || {};
-        const ga4Row = ga4Map.get(cleanUrl) || {};
+        let relativeUrl = cleanUrl;
+        try {
+          if (cleanUrl.startsWith('http')) relativeUrl = new URL(cleanUrl).pathname.replace(/\/$/, '') || '/';
+        } catch (e) {}
+
+        const gscRow = gscMap.get(cleanUrl) || gscMap.get(relativeUrl) || {};
+        const ga4Row = ga4Map.get(cleanUrl) || ga4Map.get(relativeUrl) || {};
 
         return {
           ...entry,
