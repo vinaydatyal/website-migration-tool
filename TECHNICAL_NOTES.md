@@ -601,3 +601,28 @@ An earlier fix removed `results` from the SSE `done` event (Bug Fix #10) to avoi
 - Added duplicate ID detection and repair step.
 - If two loaded mappings share the same `id` (e.g. legacy `"map_undefined"` data), they are reassigned unique IDs based on index + source URL.
 - Prevents a corrupted saved project from causing the all-rows-in-edit-mode bug on reload.
+
+---
+
+## 14. Bug Fix: Landing Page UploadZone Shows "Pages in Crawl: X found, Actually Crawled: 0 pages" (Sep 2026)
+
+### Problem
+After a live crawl completed on the landing page cards in `UploadZone.tsx`, the summary box reported:
+- `Pages in Crawl: 387 found`
+- `Actually Crawled: 0 pages`
+- `✓ All 0 discovered pages were successfully crawled and parsed.`
+
+### Root Cause
+1. In an earlier performance fix (Bug Fix #10), the server removed `results` from the Server-Sent Events (SSE) `done` frame to prevent large crawls (>1MB payload) from being truncated or severed by cloud proxies (Railway / Cloudflare). Full results were saved on `job.results` and made accessible via `GET /api/crawl/results?jobId=${jobId}`.
+2. While `DataSourcesModal.tsx` was updated to fetch `/api/crawl/results?jobId=${jobId}` upon receiving the `done` event, `UploadZone.tsx` lines 554–570 were missed and still expected `data.results` directly on the SSE event frame.
+3. Because `data.results` was `undefined`, `entries` evaluated to `[]` (length 0).
+4. `setTargetEntries(entries)` / `setSourceEntries(entries)` set state to `[]`.
+5. The UI displayed `summary.totalDiscovered` (e.g. 387) for "Pages in Crawl", but computed "Actually Crawled" and the summary text from `targetEntries.length` (0).
+
+### Fixes Applied (`src/components/UploadZone.tsx`)
+1. **HTTP Fetch on SSE `done`**: Updated the `done` event handler in `connectToCrawlJob` to display a `"Downloading results..."` status and execute `fetch('/api/crawl/results?jobId=${jobId}')` to download and map the full results array.
+2. **Mount Draft Recovery (`recoverCrawlResults`)**: Added a recovery handler that executes during the initial `useEffect` draft restore. If a completed crawl job exists in the saved draft but local storage has 0 entries, it automatically recovers the crawl entries from `/api/crawl/results`.
+3. **Resilient Count Computations**:
+   - `Pages in Crawl` now renders `Math.max(summary.totalDiscovered, summary.crawledCount, entries.length)`.
+   - `Actually Crawled` uses `entries.length > 0 ? entries.length : summary.crawledCount`.
+

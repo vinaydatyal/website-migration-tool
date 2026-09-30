@@ -418,13 +418,68 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     }
   };
 
+  // Helper to recover crawl results from backend HTTP endpoint if job is completed
+  const recoverCrawlResults = async (jobId: string, type: 'source' | 'target') => {
+    try {
+      const res = await fetch(`/api/crawl/results?jobId=${jobId}`);
+      if (res.ok) {
+        const resultData = await res.json();
+        if (resultData.status === 'done' && Array.isArray(resultData.results) && resultData.results.length > 0) {
+          const rawEntries: any[] = resultData.results;
+          const entries: CrawlEntry[] = rawEntries.map((entry: any) => {
+            if (!entry.normalizedPath && entry.url) {
+              try {
+                const u = new URL(entry.url);
+                entry.normalizedPath = u.pathname;
+              } catch (e) {
+                entry.normalizedPath = '/';
+              }
+            }
+            return entry;
+          });
+
+          if (type === 'source') {
+            setSourceEntries(entries);
+            localforage.setItem(scopedSourceKey, entries).catch(() => {});
+            localforage.setItem('uploadZone_sourceEntries', entries).catch(() => {});
+          } else {
+            setTargetEntries(entries);
+            localforage.setItem(scopedTargetKey, entries).catch(() => {});
+            localforage.setItem('uploadZone_targetEntries', entries).catch(() => {});
+          }
+
+          if (resultData.summary) {
+            setCrawlProgress(prev => ({
+              ...prev,
+              [type]: {
+                ...(prev[type] || {}),
+                jobId,
+                status: 'done',
+                current: resultData.summary.crawledCount,
+                total: Math.max(resultData.summary.totalDiscovered, resultData.summary.crawledCount, entries.length),
+                discovered: Math.max(resultData.summary.totalDiscovered, resultData.summary.crawledCount, entries.length),
+                queued: resultData.summary.queuedCount,
+                summary: resultData.summary,
+                message: 'Crawl completed'
+              }
+            }));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to recover crawl results for ${type}:`, err);
+    }
+  };
+
   // --- DRAFT STATE & BACKGROUND RECOVERY ---
   useEffect(() => {
+    let parsedDraft: any = null;
     // Restore draft on mount
     try {
       const saved = localStorage.getItem('uploadZone_draft');
       if (saved) {
-        const parsed = JSON.parse(saved);
+        parsedDraft = JSON.parse(saved);
+        const parsed = parsedDraft;
         
         // Critical: Never restore draft from a different project into this one
         const isMismatchedProject = Boolean(projectId && parsed.projectId && parsed.projectId !== projectId);
@@ -476,12 +531,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     localforage.getItem<CrawlEntry[]>(scopedSourceKey).then(saved => {
       if (saved && saved.length > 0) {
         setSourceEntries(saved);
+      } else if (parsedDraft?.crawlProgress?.source?.jobId && parsedDraft.crawlProgress.source.status === 'done') {
+        recoverCrawlResults(parsedDraft.crawlProgress.source.jobId, 'source');
       }
     }).catch(() => {});
 
     localforage.getItem<CrawlEntry[]>(scopedTargetKey).then(saved => {
       if (saved && saved.length > 0) {
         setTargetEntries(saved);
+      } else if (parsedDraft?.crawlProgress?.target?.jobId && parsedDraft.crawlProgress.target.status === 'done') {
+        recoverCrawlResults(parsedDraft.crawlProgress.target.jobId, 'target');
       }
     }).catch(() => {});
 
@@ -555,22 +614,9 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         eventSource.close();
         delete eventSourceRef.current[type];
         
-        // Ensure crawled entries have normalizedPath populated (crawler.js doesn't provide it)
-        const entries = (data.results || []).map((entry: any) => {
-          if (!entry.normalizedPath && entry.url) {
-            try {
-              const u = new URL(entry.url);
-              entry.normalizedPath = u.pathname;
-            } catch (e) {
-              entry.normalizedPath = '/';
-            }
-          }
-          return entry;
-        });
-
         const summary = data.summary || {
-          totalDiscovered: entries.length,
-          crawledCount: entries.length,
+          totalDiscovered: 0,
+          crawledCount: 0,
           queuedCount: 0,
           maxPagesReached: false,
           maxPages: crawlConfig.maxPages
@@ -579,25 +625,66 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           ...prev, 
           [type]: { 
             jobId, 
-            status: 'done', 
+            status: 'fetching_results', 
             current: summary.crawledCount, 
             total: summary.totalDiscovered,
             discovered: summary.totalDiscovered,
             queued: summary.queuedCount,
             summary,
-            message: 'Crawl completed' 
+            message: 'Downloading results...' 
           }
         }));
-        if (type === 'source') {
-          setSourceEntries(entries);
-          localforage.setItem(scopedSourceKey, entries).catch(() => {});
-          localforage.setItem('uploadZone_sourceEntries', entries).catch(() => {});
-        } else {
-          setTargetEntries(entries);
-          localforage.setItem(scopedTargetKey, entries).catch(() => {});
-          localforage.setItem('uploadZone_targetEntries', entries).catch(() => {});
-        }
-        setIsProcessing(false);
+
+        // Fetch full results via HTTP (avoids SSE payload size limits for large crawls)
+        fetch(`/api/crawl/results?jobId=${jobId}`)
+          .then(r => r.json())
+          .then(resultData => {
+            const rawEntries: any[] = resultData.results || [];
+            // Ensure crawled entries have normalizedPath populated (crawler.js doesn't provide it)
+            const entries: CrawlEntry[] = rawEntries.map((entry: any) => {
+              if (!entry.normalizedPath && entry.url) {
+                try {
+                  const u = new URL(entry.url);
+                  entry.normalizedPath = u.pathname;
+                } catch (e) {
+                  entry.normalizedPath = '/';
+                }
+              }
+              return entry;
+            });
+
+            const resolvedSummary = resultData.summary || summary;
+            setCrawlProgress(prev => ({
+              ...prev, 
+              [type]: { 
+                jobId, 
+                status: 'done', 
+                current: resolvedSummary.crawledCount, 
+                total: Math.max(resolvedSummary.totalDiscovered, resolvedSummary.crawledCount, entries.length),
+                discovered: Math.max(resolvedSummary.totalDiscovered, resolvedSummary.crawledCount, entries.length),
+                queued: resolvedSummary.queuedCount,
+                summary: resolvedSummary,
+                message: 'Crawl completed' 
+              }
+            }));
+            if (type === 'source') {
+              setSourceEntries(entries);
+              localforage.setItem(scopedSourceKey, entries).catch(() => {});
+              localforage.setItem('uploadZone_sourceEntries', entries).catch(() => {});
+            } else {
+              setTargetEntries(entries);
+              localforage.setItem(scopedTargetKey, entries).catch(() => {});
+              localforage.setItem('uploadZone_targetEntries', entries).catch(() => {});
+            }
+          })
+          .catch(err => {
+            console.error('Failed to fetch crawl results:', err);
+            setError(`Failed to download crawl results: ${err.message}`);
+            setCrawlProgress(prev => ({ ...prev, [type]: { jobId, status: 'error', message: err.message } }));
+          })
+          .finally(() => {
+            setIsProcessing(false);
+          });
       } else if (data.type === 'paused') {
         eventSource.close();
         delete eventSourceRef.current[type];
@@ -1120,7 +1207,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                     <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
                     <div className="flex items-baseline space-x-1 mt-0.5">
                       <span className="text-base font-bold text-slate-200 font-mono">
-                        {crawlProgress.source?.summary?.totalDiscovered ?? crawlProgress.source?.total ?? sourceEntries.length}
+                        {Math.max(crawlProgress.source?.summary?.totalDiscovered ?? 0, crawlProgress.source?.total ?? 0, sourceEntries?.length ?? 0)}
                       </span>
                       <span className="text-[10px] text-slate-500">found</span>
                     </div>
@@ -1130,7 +1217,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                     <span className="block text-[10px] text-brand-400 font-medium">Actually Crawled</span>
                     <div className="flex items-baseline space-x-1 mt-0.5">
                       <span className="text-base font-bold text-brand-400 font-mono">
-                        {sourceEntries.length}
+                        {sourceEntries && sourceEntries.length > 0 ? sourceEntries.length : (crawlProgress.source?.summary?.crawledCount ?? 0)}
                       </span>
                       <span className="text-[10px] text-slate-400">pages</span>
                     </div>
@@ -1143,7 +1230,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    ✓ All {sourceEntries.length} discovered pages were successfully crawled and parsed.
+                    ✓ All {sourceEntries && sourceEntries.length > 0 ? sourceEntries.length : (crawlProgress.source?.summary?.crawledCount ?? 0)} discovered pages were successfully crawled and parsed.
                   </p>
                 )}
               </div>
@@ -1301,7 +1388,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                     <span className="block text-[10px] text-slate-400 font-medium">Pages in Crawl</span>
                     <div className="flex items-baseline space-x-1 mt-0.5">
                       <span className="text-base font-bold text-slate-200 font-mono">
-                        {crawlProgress.target?.summary?.totalDiscovered ?? crawlProgress.target?.total ?? targetEntries.length}
+                        {Math.max(crawlProgress.target?.summary?.totalDiscovered ?? 0, crawlProgress.target?.total ?? 0, targetEntries?.length ?? 0)}
                       </span>
                       <span className="text-[10px] text-slate-500">found</span>
                     </div>
@@ -1311,7 +1398,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                     <span className="block text-[10px] text-emerald-400 font-medium">Actually Crawled</span>
                     <div className="flex items-baseline space-x-1 mt-0.5">
                       <span className="text-base font-bold text-emerald-400 font-mono">
-                        {targetEntries.length}
+                        {targetEntries && targetEntries.length > 0 ? targetEntries.length : (crawlProgress.target?.summary?.crawledCount ?? 0)}
                       </span>
                       <span className="text-[10px] text-slate-400">pages</span>
                     </div>
@@ -1324,7 +1411,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    ✓ All {targetEntries.length} discovered pages were successfully crawled and parsed.
+                    ✓ All {targetEntries && targetEntries.length > 0 ? targetEntries.length : (crawlProgress.target?.summary?.crawledCount ?? 0)} discovered pages were successfully crawled and parsed.
                   </p>
                 )}
               </div>
