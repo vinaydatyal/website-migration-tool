@@ -75,23 +75,31 @@ export async function saveProjectToIndexedDB(project: MigrationProject): Promise
 
 export async function loadProjectFromIndexedDB(id: string): Promise<MigrationProject | null> {
   try {
-    // 1. Check local IndexedDB first
-    const local = await projectStore.getItem<MigrationProject>(id);
-    if (local) return local;
-
-    // 2. Fall back to Supabase if not found locally
-    const { data, error } = await supabase
-      .from('migrationProjects')
-      .select('project_data')
-      .eq('id', id)
-      .single();
-
-    if (!error && data?.project_data) {
-      const proj = data.project_data as MigrationProject;
-      await projectStore.setItem(id, proj).then(undefined, () => {});
-      return proj;
+    let local = await projectStore.getItem<MigrationProject>(id);
+    
+    // Attempt to pull from Supabase to check if there is a newer version
+    try {
+      const { data, error } = await supabase
+        .from('migrationProjects')
+        .select('project_data')
+        .eq('id', id)
+        .single();
+        
+      if (!error && data?.project_data) {
+        const remoteP = data.project_data as MigrationProject;
+        const localTime = local ? new Date(local.updatedAt || 0).getTime() : 0;
+        const remoteTime = new Date(remoteP.updatedAt || 0).getTime();
+        
+        if (!local || remoteTime > localTime) {
+          local = remoteP;
+          await projectStore.setItem(id, remoteP).then(undefined, () => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Could not check Supabase for latest project data:', err);
     }
-    return null;
+    
+    return local;
   } catch (error) {
     console.error('Failed to load project:', error);
     return null;
