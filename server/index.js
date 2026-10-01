@@ -55,14 +55,22 @@ app.post('/api/projects/:id/comment', async (req, res) => {
       return m;
     });
     
-    const updatedProject = { ...latestProject, mappings: updatedMappings };
+    const updatedProject = { 
+      ...latestProject, 
+      mappings: updatedMappings,
+      updatedAt: new Date().toISOString()
+    };
     
-    const { error: updateError } = await supabase
+    const { data: updatedRows, error: updateError } = await supabase
       .from('migrationProjects')
-      .update({ project_data: updatedProject, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .update({ project_data: updatedProject, updated_at: updatedProject.updatedAt })
+      .eq('id', id)
+      .select();
       
     if (updateError) throw updateError;
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error('Update failed silently. RLS may have blocked it if the service role key is missing or invalid.');
+    }
     
     res.json({ success: true, project: updatedProject });
   } catch (err) {

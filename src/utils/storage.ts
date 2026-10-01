@@ -35,14 +35,35 @@ export async function saveProjectToIndexedDB(project: MigrationProject): Promise
     if (userId) {
       supabase
         .from('migrationProjects')
-        .upsert({
-          id: project.id,
-          project_data: project,
-          updated_at: project.updatedAt,
-          user_id: userId
+        .select('project_data')
+        .eq('id', project.id)
+        .single()
+        .then(({ data }) => {
+          if (data && data.project_data) {
+            const remoteProj = data.project_data as MigrationProject;
+            if (remoteProj.mappings && project.mappings) {
+              project.mappings.forEach(localMapping => {
+                const remoteMapping = remoteProj.mappings.find(m => m.id === localMapping.id);
+                if (remoteMapping && remoteMapping.comments) {
+                  const existingIds = new Set((localMapping.comments || []).map(c => c.id));
+                  const newComments = remoteMapping.comments.filter(c => !existingIds.has(c.id));
+                  if (newComments.length > 0) {
+                    localMapping.comments = [...(localMapping.comments || []), ...newComments];
+                  }
+                }
+              });
+            }
+          }
+          
+          return supabase.from('migrationProjects').upsert({
+            id: project.id,
+            project_data: project,
+            updated_at: project.updatedAt,
+            user_id: userId
+          });
         })
-        .then(({ error }) => {
-          if (error) console.warn('Supabase sync notice:', error.message);
+        .then((res) => {
+          if (res && res.error) console.warn('Supabase sync notice:', res.error.message);
         })
         .then(undefined, (e) => console.warn('Supabase connection notice:', e));
     }
