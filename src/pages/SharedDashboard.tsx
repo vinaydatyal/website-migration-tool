@@ -39,6 +39,44 @@ export const SharedDashboard: React.FC = () => {
     fetchProject();
   }, [id]);
 
+  const handleUpdateMapping = async (mappingId: string, updates: any) => {
+    if (!project || !id) return;
+    
+    // Only allow comments update in shared mode
+    if (Object.keys(updates).length !== 1 || !updates.comments) {
+      return;
+    }
+
+    try {
+      // Fetch latest project to avoid overwriting owner's recent changes
+      const { data, error } = await supabase
+        .from('migrationProjects')
+        .select('project_data')
+        .eq('id', id)
+        .single();
+        
+      if (error || !data) throw error;
+      
+      const latestProject = data.project_data as MigrationProject;
+      const updatedMappings = latestProject.mappings.map(m => 
+        m.id === mappingId ? { ...m, ...updates } : m
+      );
+      const updatedProject = { ...latestProject, mappings: updatedMappings };
+      
+      setProject(updatedProject);
+      
+      const { error: updateError } = await supabase
+        .from('migrationProjects')
+        .update({ project_data: updatedProject, updated_at: new Date().toISOString() })
+        .eq('id', id);
+        
+      if (updateError) throw updateError;
+    } catch (err) {
+      console.error("Failed to save comment:", err);
+      alert("Failed to save comment. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
@@ -68,7 +106,7 @@ export const SharedDashboard: React.FC = () => {
       {/* Read-Only Banner */}
       <div className="bg-brand-500/10 border-b border-brand-500/20 py-2 px-4 text-center text-sm text-brand-600 dark:text-brand-400 font-medium flex items-center justify-center gap-2 print:hidden">
         <ShieldCheck className="w-4 h-4" />
-        You are viewing a read-only snapshot of this migration project.
+        You are viewing a shared snapshot. You can add comments, but other structural changes are disabled.
       </div>
       
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -101,7 +139,7 @@ export const SharedDashboard: React.FC = () => {
             mappings={project.mappings}
             sourceEntries={project.sourceEntries || []}
             targetEntries={project.targetEntries || []}
-            onUpdateMapping={() => {}}
+            onUpdateMapping={handleUpdateMapping}
             onBulkUpdateMappings={() => {}}
             confidenceThreshold={80}
             onUpdateThreshold={() => {}}
