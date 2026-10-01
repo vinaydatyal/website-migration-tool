@@ -719,11 +719,11 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
                   className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-brand-500 focus:ring-brand-500/50 focus:ring-offset-0 cursor-pointer"
                 />
               </div>
-              <div className="py-3.5 px-3 w-[35%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('source')}>
+              <div className="py-3.5 px-3 w-[27%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('source')}>
                 <span>Source URL (Old Site)</span>
                 {sortConfig.key !== 'source' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
               </div>
-              <div className="py-3.5 px-4 w-[35%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('target')}>
+              <div className="py-3.5 px-4 w-[27%] shrink-0 flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none" onClick={() => handleSort('target')}>
                 <span>301 Target URL (New Site)</span>
                 {sortConfig.key !== 'target' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
               </div>
@@ -735,6 +735,7 @@ export const UrlMappingTable: React.FC<UrlMappingTableProps> = ({
                 <span>Confidence</span>
                 {sortConfig.key !== 'confidence' || sortConfig.direction === 'NONE' ? <ArrowUpDown className="h-3.5 w-3.5 opacity-0 group-hover:opacity-50 transition-opacity" /> : sortConfig.direction === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 text-brand-500" /> : <ArrowDown className="h-3.5 w-3.5 text-brand-500" />}
               </div>
+              <div className="py-3.5 px-4 w-56 shrink-0 text-left">Comments</div>
               <div className="py-3.5 px-4 text-right w-36 shrink-0">Actions</div>
             </div>
 

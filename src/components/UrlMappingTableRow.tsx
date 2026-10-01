@@ -128,7 +128,7 @@ export const UrlMappingTableRow = React.memo(({
       </div>
 
       {/* Source URL Column */}
-      <div className="pt-1 pb-2 pl-11 pr-4 md:py-4 md:px-3 w-full md:w-[35%] space-y-1.5 shrink-0">
+      <div className="pt-1 pb-2 pl-11 pr-4 md:py-4 md:px-3 w-full md:w-[27%] space-y-1.5 shrink-0">
         <div className="flex items-center space-x-2">
           <span className="font-mono font-bold text-slate-800 dark:text-slate-100 break-all text-xs">
             {m.source.normalizedPath}
@@ -173,7 +173,7 @@ export const UrlMappingTableRow = React.memo(({
       </div>
 
       {/* Target URL Column */}
-      <div className="pt-0 pb-2 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-[35%] space-y-1.5 shrink-0">
+      <div className="pt-0 pb-2 pl-11 pr-4 md:py-4 md:px-4 w-full md:w-[27%] space-y-1.5 shrink-0">
         {isEditing ? (
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
@@ -350,21 +350,7 @@ export const UrlMappingTableRow = React.memo(({
               </div>
             )}
 
-            {/* Notes Field */}
-            <div className="mt-2 group/note relative">
-              <input
-                type="text"
-                placeholder="Add a note..."
-                value={localNotes}
-                onChange={(e) => setLocalNotes(e.target.value)}
-                onBlur={() => {
-                  if (localNotes !== (m.notes || '')) {
-                    onUpdateMapping?.(m.id, { notes: localNotes });
-                  }
-                }}
-                className="w-full text-[10px] bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 dark:focus:border-brand-500 outline-none px-0 py-0.5 text-slate-600 dark:text-slate-400 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
-              />
-            </div>
+
           </>
         )}
       </div>
@@ -403,6 +389,47 @@ export const UrlMappingTableRow = React.memo(({
           <span className="text-[9px] text-slate-500 uppercase font-semibold">
             {m.strategy.replace('_', ' ')}
           </span>
+        </div>
+      </div>
+
+      {/* Comments Column */}
+      <div className="hidden md:flex flex-col py-4 px-4 w-56 shrink-0 space-y-2 relative border-l border-slate-100 dark:border-slate-800/50">
+        <div className="flex-1 overflow-y-auto max-h-[120px] pr-1 space-y-2 text-xs scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700">
+          {m.comments?.map(comment => (
+            <div key={comment.id} className="bg-slate-50 dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-800">
+              <div className="flex justify-between items-center mb-1 text-[10px]">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">{comment.author}</span>
+                <span className="text-slate-400">{new Date(comment.timestamp).toLocaleDateString()} {new Date(comment.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+              </div>
+              <div className="text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{comment.text}</div>
+            </div>
+          ))}
+          {(!m.comments || m.comments.length === 0) && (
+            <div className="text-slate-400 dark:text-slate-600 italic">No comments</div>
+          )}
+        </div>
+        <div className="mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
+          <input
+            type="text"
+            placeholder="Add a comment..."
+            className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const input = e.target as HTMLInputElement;
+                if (input.value.trim()) {
+                  const newComment = {
+                    id: crypto.randomUUID(),
+                    text: input.value.trim(),
+                    timestamp: new Date().toISOString(),
+                    author: 'Client' // Ideally from user session, but 'Client' for public share
+                  };
+                  const updatedComments = [...(m.comments || []), newComment];
+                  onUpdateMapping?.(m.id, { comments: updatedComments });
+                  input.value = '';
+                }
+              }
+            }}
+          />
         </div>
       </div>
 

@@ -59,6 +59,13 @@ export type MappingStatus =
   | 'MANUAL' 
   | 'GONE_410';
 
+export interface Comment {
+  id: string;
+  text: string;
+  timestamp: string;
+  author: string;
+}
+
 export interface UrlMapping {
   id: string;
   source: CrawlEntry;
@@ -73,6 +80,7 @@ export interface UrlMapping {
   discrepancies: ParityDiscrepancy[];
   patternId?: string;
   notes?: string;
+  comments?: Comment[];
   isHidden?: boolean;
 }
 
