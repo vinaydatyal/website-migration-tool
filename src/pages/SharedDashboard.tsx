@@ -48,29 +48,26 @@ export const SharedDashboard: React.FC = () => {
     }
 
     try {
-      // Fetch latest project to avoid overwriting owner's recent changes
-      const { data, error } = await supabase
-        .from('migrationProjects')
-        .select('project_data')
-        .eq('id', id)
-        .single();
-        
-      if (error || !data) throw error;
+      // Find the newly added comment (the last one)
+      const newComment = updates.comments[updates.comments.length - 1];
       
-      const latestProject = data.project_data as MigrationProject;
-      const updatedMappings = latestProject.mappings.map(m => 
-        m.id === mappingId ? { ...m, ...updates } : m
-      );
-      const updatedProject = { ...latestProject, mappings: updatedMappings };
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/projects/${id}/comment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mappingId,
+          comment: newComment
+        })
+      });
       
-      setProject(updatedProject);
+      if (!response.ok) {
+        throw new Error('Failed to add comment');
+      }
       
-      const { error: updateError } = await supabase
-        .from('migrationProjects')
-        .update({ project_data: updatedProject, updated_at: new Date().toISOString() })
-        .eq('id', id);
-        
-      if (updateError) throw updateError;
+      const data = await response.json();
+      setProject(data.project);
     } catch (err) {
       console.error("Failed to save comment:", err);
       alert("Failed to save comment. Please try again.");

@@ -12,12 +12,63 @@ import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructur
 import { verifyAuth } from './authMiddleware.js';
 import { generatePdfReport } from './pdf.js';
 import adminRoutes from './admin.js';
+import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
+
+// Initialize Supabase Client for backend bypass
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false },
+  global: { WebSocket: WebSocket }
+});
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.use('/api/admin', adminRoutes);
+
+app.post('/api/projects/:id/comment', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { mappingId, comment } = req.body;
+    
+    const { data, error } = await supabase
+      .from('migrationProjects')
+      .select('project_data')
+      .eq('id', id)
+      .single();
+      
+    if (error || !data) throw error;
+    
+    const latestProject = data.project_data;
+    
+    const updatedMappings = latestProject.mappings.map(m => {
+      if (m.id === mappingId) {
+        return {
+          ...m,
+          comments: [...(m.comments || []), comment]
+        };
+      }
+      return m;
+    });
+    
+    const updatedProject = { ...latestProject, mappings: updatedMappings };
+    
+    const { error: updateError } = await supabase
+      .from('migrationProjects')
+      .update({ project_data: updatedProject, updated_at: new Date().toISOString() })
+      .eq('id', id);
+      
+    if (updateError) throw updateError;
+    
+    res.json({ success: true, project: updatedProject });
+  } catch (err) {
+    console.error('Failed to add comment via API:', err);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
