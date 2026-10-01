@@ -122,6 +122,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     { id: 'VERCEL_REDIRECTS', label: 'Vercel / Netlify', icon: Globe },
     { id: 'NEXTJS_CONFIG', label: 'Next.js Config', icon: FileCode2 },
     { id: 'WORDPRESS_REDIRECTION_CSV', label: 'WP Redirection', icon: Globe },
+    { id: 'SHOPIFY_CSV', label: 'Shopify (CSV)', icon: Cloud },
+    { id: 'BASIC_MAPPING_CSV', label: 'Basic Mapping (CSV)', icon: FileSpreadsheet },
     { id: 'FULL_MAPPING_CSV', label: 'Full Audit CSV', icon: FileSpreadsheet },
     { id: 'FULL_AUDIT_EXCEL', label: 'Playbook + Audit (Excel)', icon: FileSpreadsheet },
     { id: 'SITEMAP_XML', label: 'Target Sitemap (XML)', icon: Globe },

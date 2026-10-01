@@ -284,6 +284,45 @@ export function generateWordpressRedirectionCsv(mappings: UrlMapping[]): string 
 }
 
 /**
+ * Generates Shopify Redirect CSV
+ */
+export function generateShopifyCsv(mappings: UrlMapping[]): string {
+  const rows = mappings
+    .filter(m => m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED' && m.statusCode !== 410)
+    .map(m => {
+      // Shopify requires relative paths starting with /
+      let redirectFrom = m.source.normalizedPath;
+      if (!redirectFrom.startsWith('/')) redirectFrom = '/' + redirectFrom;
+      
+      let redirectTo = m.target ? m.target.normalizedPath : m.targetUrl;
+      if (redirectTo && !redirectTo.startsWith('http') && !redirectTo.startsWith('/')) {
+        redirectTo = '/' + redirectTo;
+      }
+      
+      return {
+        'Redirect from': redirectFrom,
+        'Redirect to': redirectTo
+      };
+    });
+
+  return Papa.unparse(rows);
+}
+
+/**
+ * Generates Basic Mapping CSV (Source to Target)
+ */
+export function generateBasicMappingCsv(mappings: UrlMapping[]): string {
+  const rows = mappings
+    .filter(m => m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED' && m.statusCode !== 410)
+    .map(m => ({
+      'Source URL': m.sourceUrl,
+      'Target URL': m.targetUrl
+    }));
+
+  return Papa.unparse(rows);
+}
+
+/**
  * Generates Comprehensive Full Mapping CSV
  */
 export function generateFullMappingCsv(mappings: UrlMapping[]): string {
@@ -423,6 +462,18 @@ export function exportRedirects(
       return {
         content: generateWordpressRedirectionCsv(mappings),
         filename: 'wordpress_redirection.csv',
+        mimeType: 'text/csv'
+      };
+    case 'SHOPIFY_CSV':
+      return {
+        content: generateShopifyCsv(mappings),
+        filename: 'shopify_redirects.csv',
+        mimeType: 'text/csv'
+      };
+    case 'BASIC_MAPPING_CSV':
+      return {
+        content: generateBasicMappingCsv(mappings),
+        filename: 'basic_mapping.csv',
         mimeType: 'text/csv'
       };
     case 'FULL_AUDIT_EXCEL':
