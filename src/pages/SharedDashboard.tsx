@@ -51,7 +51,7 @@ export const SharedDashboard: React.FC = () => {
       // Find the newly added comment (the last one)
       const newComment = updates.comments[updates.comments.length - 1];
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/projects/${id}/comment`, {
+      const response = await fetch(`/api/projects/${id}/comment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
