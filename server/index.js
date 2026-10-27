@@ -12,6 +12,7 @@ import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructur
 import { verifyAuth } from './authMiddleware.js';
 import { generatePdfReport } from './pdf.js';
 import adminRoutes from './admin.js';
+import aiRoutes from './ai.js';
 import { createClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
 
@@ -29,6 +30,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.post('/api/projects/:id/comment', async (req, res) => {
   try {
