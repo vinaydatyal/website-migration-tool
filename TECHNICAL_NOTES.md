@@ -652,3 +652,15 @@ Added the ability to recrawl a single target URL directly from the URL mapping r
 - **Frontend Health**: Checked `http://localhost:4000` returning `200 OK`.
 - **Browser Validation**: Navigated to `http://localhost:4000` using the browser subagent. Validated smooth load into `MigrateShield` auth route (`/login`) without blank screens, quota exceptions, or unhandled promise rejections.
 
+---
+
+## 17. Architecture Proposal: Claude AI Integration Roadmap (Oct 2026)
+
+### Objectives & Hybrid Strategy
+- **Hybrid Matching Architecture**: Heuristic algorithms (Exact path, slug, Levenshtein, exact title/H1) resolve 60–80% of URLs at zero cost and zero latency. Claude (`claude-3-5-haiku` for bulk batches, `claude-3-5-sonnet` for high-traffic GSC equity pages) resolves ambiguous, restructured, or unmatched URLs (<75% confidence).
+- **SEO Parity & Intent Preservation**: Claude evaluates search intent alignment between source and target pages, flagging keyword loss and recommending parity-preserving title/meta description fixes.
+- **Conflict-Free Regex Generation**: Synthesis of clean Apache/Nginx/Cloudflare rewrite rules from mapping clusters with automated conflict detection.
+- **Interactive Migration Copilot**: Context-aware in-app assistant for instant row explanations, redirect chain debugging, and stakeholder summaries.
+- **Backend Architecture**: All AI calls routed through secure Express endpoints (`/api/ai/*`) using `@anthropic-ai/sdk`, supporting both server environment keys and user-supplied Bring-Your-Own-Key (BYOK) configurations.
+
+
