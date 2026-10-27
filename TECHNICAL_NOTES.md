@@ -634,6 +634,21 @@ After a live crawl completed on the landing page cards in `UploadZone.tsx`, the 
 Added the ability to recrawl a single target URL directly from the URL mapping row in the UI. This is useful when a target URL was added manually or failed during the main crawl.
 
 ### Changes
-1. **server/crawler.js**: Extracted single URL fetching logic into etchSingleUrl.
+1. **server/crawler.js**: Extracted single URL fetching logic into fetchSingleUrl.
 2. **server/index.js**: Added POST /api/recrawl-url endpoint.
 3. **src/components/UrlMappingTableRow.tsx**: Added RefreshCw icon button next to the ping button. Hooked it to handleRecrawl which calls the new API and updates the row using onUpdateMapping.
+
+---
+
+## 16. Localhost Dev Server Verification & Runtime Status (Oct 2026)
+
+### Configuration & Ports
+- **Frontend Vite Dev Server**: Running on `http://localhost:4000` with host listening enabled (`0.0.0.0:4000`).
+- **Backend Express Server**: Running on `http://localhost:3001` with API proxying configured in [vite.config.ts](file:///e:/Antigravity/Website%20Migration%20Tool/vite.config.ts).
+- **Concurrent Dev Command**: `npm run dev` spawns both `dev:frontend` and `dev:backend` in parallel.
+
+### Verification Performed
+- **Port Inspection**: Confirmed `:: 4000` and `:: 3001` in `Listen` state via TCP socket verification.
+- **Frontend Health**: Checked `http://localhost:4000` returning `200 OK`.
+- **Browser Validation**: Navigated to `http://localhost:4000` using the browser subagent. Validated smooth load into `MigrateShield` auth route (`/login`) without blank screens, quota exceptions, or unhandled promise rejections.
+
