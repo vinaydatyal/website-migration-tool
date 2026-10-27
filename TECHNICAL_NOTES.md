@@ -654,13 +654,26 @@ Added the ability to recrawl a single target URL directly from the URL mapping r
 
 ---
 
-## 17. Architecture Proposal: Claude AI Integration Roadmap (Oct 2026)
+## 17. Architecture: Claude AI Additive Enhancement Layer (Oct 2026)
 
-### Objectives & Hybrid Strategy
-- **Hybrid Matching Architecture**: Heuristic algorithms (Exact path, slug, Levenshtein, exact title/H1) resolve 60–80% of URLs at zero cost and zero latency. Claude (`claude-3-5-haiku` for bulk batches, `claude-3-5-sonnet` for high-traffic GSC equity pages) resolves ambiguous, restructured, or unmatched URLs (<75% confidence).
-- **SEO Parity & Intent Preservation**: Claude evaluates search intent alignment between source and target pages, flagging keyword loss and recommending parity-preserving title/meta description fixes.
-- **Conflict-Free Regex Generation**: Synthesis of clean Apache/Nginx/Cloudflare rewrite rules from mapping clusters with automated conflict detection.
-- **Interactive Migration Copilot**: Context-aware in-app assistant for instant row explanations, redirect chain debugging, and stakeholder summaries.
-- **Backend Architecture**: All AI calls routed through secure Express endpoints (`/api/ai/*`) using `@anthropic-ai/sdk`, supporting both server environment keys and user-supplied Bring-Your-Own-Key (BYOK) configurations.
+### Core Principle: Improve & Augment — Never Replace
+All existing workflows, heuristic algorithms (exact path, slug, Levenshtein distance, token overlap), Web Worker multithreading, SEO parity audits, and export engines remain **100% active and untouched**. Claude is integrated strictly as an **additive, assistive copilot layer** to enhance accuracy and productivity:
+
+1. **URL Mapping Table**:
+   - Primary matching remains 100% heuristic in the background worker.
+   - Additive Feature: Opt-in `"Enhance Unmatched with Claude"` button to suggest candidates for low-confidence (<70%) or `UNMATCHED` URLs.
+   - Claude assigns an explainable reasoning badge (`aiReasoning`) displayed in a tooltip.
+2. **SEO Parity Auditor**:
+   - Existing discrepancy checks (titles, H1, meta descriptions, canonicals, status codes) remain identical.
+   - Additive Feature: Optional `"AI Search Intent Analysis"` button suggesting keyword-preserving title/description rewrites.
+3. **Regex Synthesizer**:
+   - Existing pattern synthesis algorithms and rule generators remain identical.
+   - Additive Feature: Optional `"Validate & Optimize with Claude"` to test edge cases and rule precedence conflicts.
+4. **PDF Reports & Exports**:
+   - Existing Apache, Nginx, Cloudflare, and CSV exports remain identical.
+   - Additive Feature: Optional `"Include AI Executive Summary"` in PDF export modal for C-level stakeholder briefs.
+5. **Modular Backend Setup**:
+   - Isolated module `server/ai.js` mounted at `/api/ai/*` via `@anthropic-ai/sdk`. No existing backend endpoints are modified.
+
 
 
