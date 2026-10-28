@@ -689,6 +689,34 @@ A futuristic, one-click autonomous healing cockpit that transforms MigrateShield
 4. **Hop & Loop Neutralizer**: Automatically flattens multi-hop redirect chains (`A -> B -> C` into `A -> C`) and converts 302 temporary redirects into instant 301 permanent rules.
 5. **Interactive Remediation HUD & 1-Click Commit**: Provides a cyberpunk/sci-fi holographic telemetry display showing pre/post health scores, revenue protected, and an interactive diff preview before committing all fixes to the project state.
 
+---
+
+## 19. Architecture: Crawler Overhaul, Semantic Data Model & Tiered Storage (Oct 2026)
+
+### 1. Dual-Mode Intelligent Crawler Engine
+- **XML Sitemap Fast-Track**: Parses `sitemap.xml` and sub-sitemaps in 2-3 seconds, giving instant inventory of all URLs.
+- **Turbo Stream Mode**: Lightweight HTTP stream crawler with Cheerio for static/SSR/Shopify/WordPress sites, achieving 50–100 pages/second with minimal RAM usage.
+- **Deep Headless Mode (Puppeteer)**: Targeted Puppeteer execution for JS-hydrated SPAs, with aggressive resource blocking (images, web fonts, stylesheets, third-party analytics blocked) for 4x faster page loads.
+- **Deep Attribute Extraction**:
+  - Exact `<link rel="canonical">` target.
+  - `<meta name="robots">` indexability directives.
+  - Schema.org JSON-LD entities (`@type: Product | Article | BreadcrumbList | CollectionPage`).
+  - Breadcrumb navigation trail (`Home > Category > Subcategory`).
+  - Clean 100-word body text snippet stripped of nav/header/footer boilerplate.
+  - Heading hierarchy (`H1`, top 3 `H2` subheadings).
+
+### 2. Tiered Normalized Storage Architecture
+- **Tier 1 (In-Memory React Virtualized State)**: Retains only lightweight row attributes (`id`, `sourceUrl`, `targetUrl`, `confidence`, `status`, `strategy`, `aiReasoning`) for lag-free 60 FPS scrolling up to 100,000 URLs.
+- **Tier 2 (Normalized IndexedDB Stores)**: Normalized stores via `localforage` for heavy payloads (`crawlDetailsStore`, `schemaDataStore`, `analyticsStore`), loaded on demand.
+- **Tier 3 (Differential Delta Snapshots)**: Undo/redo stores delta patches of modified IDs instead of cloning full 20MB project states, preventing `QuotaExceededError` and memory spikes.
+
+### 3. Ease-of-Use & Workflow Innovations
+- **Visual IA & Sitemap Topology Graph**: Interactive tree canvas comparing Old IA vs New IA with drag-and-drop category branch mapping.
+- **Pre-Flight Redirect Chain & Loop Sentinel**: Automated detection and 1-click flattening of multi-hop redirect chains and 302 leaks.
+- **Native 1-Click CMS Exporters**: Direct export formatting for Shopify URL Redirects CSV, WordPress Redirection plugin, Cloudflare Workers, and Vercel/Netlify.
+- **Post-Launch Production Sentinel**: Real-time validation suite verifying live 301 redirects on the production domain post-cutover.
+
+
 
 
 
