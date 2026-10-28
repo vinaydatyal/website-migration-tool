@@ -315,7 +315,7 @@ export function generateBasicMappingCsv(mappings: UrlMapping[]): string {
   const rows = mappings
     .filter(m => m.targetUrl && m.status !== 'GONE_410' && m.strategy !== 'UNMAPPED' && m.statusCode !== 410)
     .map(m => ({
-      'Source URL': m.sourceUrl,
+      'Source URL': m.source.url,
       'Target URL': m.targetUrl
     }));
 

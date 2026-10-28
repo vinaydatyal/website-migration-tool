@@ -23,6 +23,7 @@ import { DomainSwapModal } from './components/DomainSwapModal';
 import { ImportMapModal } from './components/ImportMapModal';
 import { RestartPipelineModal } from './components/RestartPipelineModal';
 import { KnowledgeBaseSidebar } from './components/KnowledgeBaseSidebar';
+import { NeuralHyperHealModal } from './components/NeuralHyperHealModal';
 import { SharedDashboard } from './pages/SharedDashboard';
 import { 
   CrawlEntry, 
@@ -74,6 +75,7 @@ export function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isProjectManagerOpen, setIsProjectManagerOpen] = useState<boolean>(false);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [isHyperHealOpen, setIsHyperHealOpen] = useState<boolean>(false);
   const [helpContext, setHelpContext] = useState<string | undefined>(undefined);
   const [snapshots, setSnapshots] = useState<MigrationSnapshot[]>([]);
   const [projectId, setProjectId] = useState<string>(() => crypto.randomUUID());
@@ -667,6 +669,22 @@ export function App() {
     }
   };
 
+  const handleApplyHyperHeal = (updatedMappings: UrlMapping[], newPatterns: SynthesizedPattern[]) => {
+    pushToHistory();
+    setMappings(updatedMappings);
+    if (newPatterns && newPatterns.length > 0) {
+      setPatterns(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const filtered = newPatterns.filter(p => !existingIds.has(p.id));
+        return [...prev, ...filtered];
+      });
+    }
+    if (targetEntries) {
+      const newStats = calculateMigrationStats(sourceEntries || [], targetEntries, updatedMappings, projectProfile, resolvedDiscrepancies);
+      setStats(newStats);
+    }
+  };
+
   const handleUpdateMapping = (mappingId: string, updates: Partial<UrlMapping>) => {
     pushToHistory();
     const mappingToUpdate = mappings.find(m => m.id === mappingId);
@@ -1088,6 +1106,7 @@ export function App() {
               hasData={hasData}
               projectName={projectName}
               setProjectName={setProjectName}
+              onOpenHyperHeal={() => setIsHyperHealOpen(true)}
               onSaveVersion={() => takeSnapshot('Manual Snapshot', mappings, stats!)}
               onForceSave={handleForceSave}
               isDemo={isDemo}
@@ -1150,6 +1169,7 @@ export function App() {
                           onGscConnected={() => setIsGscConnected(true)}
                           snapshots={snapshots}
                           projectId={projectId}
+                          onOpenHyperHeal={() => setIsHyperHealOpen(true)}
                         />
                       )
                     } />
@@ -1357,6 +1377,16 @@ export function App() {
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
         activeContext={helpContext}
+      />
+
+      <NeuralHyperHealModal
+        isOpen={isHyperHealOpen}
+        onClose={() => setIsHyperHealOpen(false)}
+        mappings={mappings}
+        sourceEntries={sourceEntries || []}
+        targetEntries={targetEntries || []}
+        stats={stats}
+        onApplyFixes={handleApplyHyperHeal}
       />
 
           </div>

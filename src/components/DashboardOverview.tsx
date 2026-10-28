@@ -16,7 +16,8 @@ import {
   Loader2,
   Activity,
   Milestone,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MigrationSummaryStats, UrlMapping, DiscrepancySeverity, ParityDiscrepancy, MigrationSnapshot } from '../types/migration';
@@ -38,6 +39,7 @@ interface DashboardOverviewProps {
   snapshots: MigrationSnapshot[];
   isReadOnly?: boolean;
   projectId?: string | null;
+  onOpenHyperHeal?: () => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -53,6 +55,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   snapshots,
   isReadOnly = false,
   projectId,
+  onOpenHyperHeal,
 }) => {
   const [currentIssuePage, setCurrentIssuePage] = React.useState(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
@@ -172,6 +175,41 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Futuristic HyperHeal Cockpit Banner */}
+      {onOpenHyperHeal && !isReadOnly && (
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-emerald-500/40 p-5 shadow-[0_0_40px_rgba(16,185,129,0.12)] group">
+          <div className="absolute top-0 right-0 w-96 h-full bg-gradient-to-l from-emerald-500/10 via-cyan-500/10 to-transparent pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start md:items-center space-x-4">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.25)] text-emerald-400 group-hover:scale-105 transition-transform">
+                <Zap className="h-6 w-6 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                    Claude Neural Auto-Remediator
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full">
+                      Autopilot Ready
+                    </span>
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                  One-click autonomous healing: bridges orphaned 404 URLs, synthesizes keyword-retaining meta tags, and compresses 1:1 redirects into clean regex rules in seconds.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onOpenHyperHeal}
+              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-mono font-bold bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 hover:from-emerald-400 hover:to-cyan-300 text-slate-950 shadow-lg shadow-emerald-500/25 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Zap className="h-4 w-4 stroke-[2.5]" />
+              <span>⚡ Launch HyperHeal (1-Click Fix)</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Using Glassmorphism */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -17,7 +17,8 @@ import {
   Server,
   User,
   LogOut,
-  ExternalLink
+  ExternalLink,
+  Zap
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { slugify } from '../utils/text';
@@ -37,6 +38,7 @@ interface NavbarProps {
   onOpenProjectManager: () => void;
   onOpenHelp: () => void;
   onNewProject: () => void;
+  onOpenHyperHeal?: () => void;
   hasData: boolean;
   projectName?: string;
   setProjectName?: (name: string) => void;
@@ -56,6 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenProjectManager,
   onOpenHelp,
   onNewProject,
+  onOpenHyperHeal,
   hasData,
   projectName = 'Untitled Project',
   setProjectName,
@@ -416,6 +419,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <Download className="h-3.5 w-3.5 stroke-[2.5] rotate-180" />
                     <span>Import Map</span>
+                  </button>
+                )}
+
+                {onOpenHyperHeal && (
+                  <button
+                    onClick={onOpenHyperHeal}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 hover:from-emerald-400 hover:to-cyan-300 text-slate-950 shadow-md shadow-emerald-500/25 transition-all cursor-pointer mr-2 animate-pulse"
+                    title="Launch Claude Neural Auto-Remediator (1-Click Autonomous Site Fix)"
+                  >
+                    <Zap className="h-3.5 w-3.5 stroke-[2.5]" />
+                    <span>⚡ HyperHeal</span>
                   </button>
                 )}
 
