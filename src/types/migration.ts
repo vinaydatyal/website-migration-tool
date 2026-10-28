@@ -29,6 +29,13 @@ export interface CrawlEntry {
   visits?: number;
   revenue?: number;
   
+  // Enhanced Semantic & Taxonomy Fields
+  h2s?: string[];
+  breadcrumbs?: string[];
+  contentSnippet?: string;
+  pageType?: 'PRODUCT' | 'CATEGORY' | 'BLOG_POST' | 'LEAD_GEN' | 'HOMEPAGE' | 'POLICY' | 'OTHER';
+  primaryKeywords?: string[];
+  
   // Analytics Metrics
   clicks?: number;
   impressions?: number;
@@ -49,6 +56,7 @@ export type MatchStrategy =
   | 'MEDIUM_FUZZY' 
   | 'PATTERN_RULE' 
   | 'MANUAL_OVERRIDE' 
+  | 'CLAUDE_AI_BRIDGE'
   | 'GONE_410' 
   | 'UNMAPPED';
 
@@ -82,6 +90,13 @@ export interface UrlMapping {
   notes?: string;
   comments?: Comment[];
   isHidden?: boolean;
+  
+  // Claude AI HyperHeal fields
+  aiReasoning?: string;
+  aiSuggestedTitle?: string;
+  aiSuggestedDescription?: string;
+  aiSearchIntent?: string;
+  isAiResolved?: boolean;
 }
 
 export type DiscrepancySeverity = 'CRITICAL' | 'HIGH' | 'WARNING' | 'INFO';

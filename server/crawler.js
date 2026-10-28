@@ -10,16 +10,16 @@ function normalizeUrl(url) {
   }
 }
 
-function extractMetadataFromHtml(html) {
+function extractMetadataFromHtml(html, pageUrl = '') {
   if (!html || typeof html !== 'string') {
-    return { title: '', metaDescription: '', h1: '', h2: '', wordCount: 0, links: [] };
+    return { title: '', metaDescription: '', h1: '', h2: '', h2s: [], canonical: '', metaRobots: '', schemaTypes: [], breadcrumbs: [], contentSnippet: '', pageType: 'OTHER', wordCount: 0, links: [] };
   }
 
   // Title extraction
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
-  // Meta description extraction (handles both name then content, and content then name)
+  // Meta description extraction (handles name/content and content/name)
   let metaDescription = '';
   const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i) ||
                         html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i);
@@ -27,31 +27,101 @@ function extractMetadataFromHtml(html) {
     metaDescription = metaDescMatch[1].trim();
   }
 
+  // Canonical tag
+  let canonical = '';
+  const canonicalMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']/i) ||
+                         html.match(/<link[^>]*href=["']([^"']*)["'][^>]*rel=["']canonical["']/i);
+  if (canonicalMatch) {
+    canonical = canonicalMatch[1].trim();
+  }
+
+  // Meta Robots
+  let metaRobots = '';
+  const robotsMatch = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["']/i) ||
+                      html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']robots["']/i);
+  if (robotsMatch) {
+    metaRobots = robotsMatch[1].trim();
+  }
+
   // H1 and H2 tags
   const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const h1 = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
 
-  const h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-  const h2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, '').trim() : '';
+  const h2s = [];
+  const h2Regex = /<h2[^>]*>([\s\S]*?)<\/h2>/gi;
+  let h2Match;
+  while ((h2Match = h2Regex.exec(html)) !== null && h2s.length < 3) {
+    const text = h2Match[1].replace(/<[^>]+>/g, '').trim();
+    if (text) h2s.push(text);
+  }
+  const h2 = h2s[0] || '';
 
-  // Word count (strip script, style, html tags)
+  // Schema.org types & Breadcrumbs extraction
+  const schemaTypes = [];
+  const breadcrumbs = [];
+  const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let jsonMatch;
+  while ((jsonMatch = jsonLdRegex.exec(html)) !== null) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      const items = Array.isArray(parsed) ? parsed : (parsed['@graph'] || [parsed]);
+      for (const item of items) {
+        if (item['@type']) {
+          const typeStr = Array.isArray(item['@type']) ? item['@type'].join(', ') : item['@type'];
+          schemaTypes.push(typeStr);
+        }
+        if (item['@type'] === 'BreadcrumbList' && Array.isArray(item.itemListElement)) {
+          for (const crumb of item.itemListElement) {
+            const name = crumb.name || crumb.item?.name;
+            if (name) breadcrumbs.push(name);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Word count & clean 100-word content snippet
   const textOnly = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const wordCount = textOnly ? textOnly.split(/\s+/).filter(Boolean).length : 0;
+  const words = textOnly ? textOnly.split(/\s+/).filter(Boolean) : [];
+  const wordCount = words.length;
+  const contentSnippet = words.slice(0, 100).join(' ');
+
+  // Page Type classification
+  let pageType = 'OTHER';
+  const path = pageUrl ? new URL(pageUrl, 'https://example.com').pathname.toLowerCase() : '';
+  const schemaStr = schemaTypes.join(' ').toLowerCase();
+
+  if (path === '/' || path === '') {
+    pageType = 'HOMEPAGE';
+  } else if (schemaStr.includes('product') || path.includes('/product') || path.includes('/item/')) {
+    pageType = 'PRODUCT';
+  } else if (schemaStr.includes('collection') || path.includes('/category') || path.includes('/collection') || path.includes('/shop')) {
+    pageType = 'CATEGORY';
+  } else if (schemaStr.includes('article') || schemaStr.includes('blog') || path.includes('/blog') || path.includes('/news') || path.includes('/post')) {
+    pageType = 'BLOG_POST';
+  } else if (path.includes('/contact') || path.includes('/quote') || path.includes('/demo')) {
+    pageType = 'LEAD_GEN';
+  } else if (path.includes('/privacy') || path.includes('/terms') || path.includes('/policy')) {
+    pageType = 'POLICY';
+  }
 
   // Hyperlinks
   const links = [];
   const linkRegex = /<a[^>]*href=["'](https?:\/\/[^"']+)["']/gi;
-  let match;
-  while ((match = linkRegex.exec(html)) !== null) {
-    links.push(match[1]);
+  let linkMatch;
+  while ((linkMatch = linkRegex.exec(html)) !== null) {
+    links.push(linkMatch[1]);
   }
 
-  return { title, metaDescription, h1, h2, wordCount, links };
+  return { title, metaDescription, h1, h2, h2s, canonical, metaRobots, schemaTypes, breadcrumbs, contentSnippet, pageType, wordCount, links };
 }
 
 async function safeExtractMetadata(workerPage, maxRetries = 3) {
@@ -63,17 +133,88 @@ async function safeExtractMetadata(workerPage, maxRetries = 3) {
         const title = document.title || '';
         const metaDescEl = document.querySelector('meta[name="description"]');
         const metaDescription = metaDescEl ? metaDescEl.getAttribute('content') || '' : '';
+        
+        // Canonical
+        const canonicalEl = document.querySelector('link[rel="canonical"]');
+        const canonical = canonicalEl ? canonicalEl.getAttribute('href') || '' : '';
+
+        // Meta Robots
+        const robotsEl = document.querySelector('meta[name="robots"]');
+        const metaRobots = robotsEl ? robotsEl.getAttribute('content') || '' : '';
+
+        // Headings
         const h1El = document.querySelector('h1');
         const h1 = h1El ? h1El.innerText.trim() : '';
-        const h2El = document.querySelector('h2');
-        const h2 = h2El ? h2El.innerText.trim() : '';
-        const wordCount = document.body ? (document.body.innerText || '').split(/\s+/).filter(Boolean).length : 0;
-        
+
+        const h2Els = Array.from(document.querySelectorAll('h2')).slice(0, 3);
+        const h2s = h2Els.map(el => el.innerText.trim()).filter(Boolean);
+        const h2 = h2s[0] || '';
+
+        // Schema.org and Breadcrumbs
+        const schemaTypes = [];
+        const breadcrumbs = [];
+        try {
+          const jsonLdScripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+          for (const s of jsonLdScripts) {
+            try {
+              const parsed = JSON.parse(s.innerText || '{}');
+              const items = Array.isArray(parsed) ? parsed : (parsed['@graph'] || [parsed]);
+              for (const item of items) {
+                if (item['@type']) {
+                  schemaTypes.push(Array.isArray(item['@type']) ? item['@type'].join(', ') : item['@type']);
+                }
+                if (item['@type'] === 'BreadcrumbList' && Array.isArray(item.itemListElement)) {
+                  for (const crumb of item.itemListElement) {
+                    const name = crumb.name || crumb.item?.name;
+                    if (name) breadcrumbs.push(name);
+                  }
+                }
+              }
+            } catch {}
+          }
+        } catch {}
+
+        // Fallback DOM breadcrumbs if JSON-LD wasn't present
+        if (breadcrumbs.length === 0) {
+          const breadcrumbLinks = Array.from(document.querySelectorAll('[aria-label*="breadcrumb" i] a, .breadcrumb a, .breadcrumbs a'));
+          for (const a of breadcrumbLinks) {
+            const text = a.innerText.trim();
+            if (text && !breadcrumbs.includes(text)) breadcrumbs.push(text);
+          }
+        }
+
+        // Clean content snippet
+        const mainEl = document.querySelector('main, article, #content, .content, body');
+        const textOnly = (mainEl ? mainEl.innerText : (document.body ? document.body.innerText : ''))
+          .replace(/\s+/g, ' ')
+          .trim();
+        const words = textOnly.split(/\s+/).filter(Boolean);
+        const wordCount = words.length;
+        const contentSnippet = words.slice(0, 100).join(' ');
+
+        // Page Type
+        const path = window.location.pathname.toLowerCase();
+        const schemaStr = schemaTypes.join(' ').toLowerCase();
+        let pageType = 'OTHER';
+        if (path === '/' || path === '') {
+          pageType = 'HOMEPAGE';
+        } else if (schemaStr.includes('product') || path.includes('/product') || path.includes('/item/')) {
+          pageType = 'PRODUCT';
+        } else if (schemaStr.includes('collection') || path.includes('/category') || path.includes('/collection') || path.includes('/shop')) {
+          pageType = 'CATEGORY';
+        } else if (schemaStr.includes('article') || schemaStr.includes('blog') || path.includes('/blog') || path.includes('/news') || path.includes('/post')) {
+          pageType = 'BLOG_POST';
+        } else if (path.includes('/contact') || path.includes('/quote') || path.includes('/demo')) {
+          pageType = 'LEAD_GEN';
+        } else if (path.includes('/privacy') || path.includes('/terms') || path.includes('/policy')) {
+          pageType = 'POLICY';
+        }
+
         const links = Array.from(document.querySelectorAll('a[href]'))
           .map(a => a.href)
           .filter(href => href && href.startsWith('http'));
           
-        return { title, metaDescription, h1, h2, wordCount, links };
+        return { title, metaDescription, canonical, metaRobots, h1, h2, h2s, schemaTypes, breadcrumbs, contentSnippet, pageType, wordCount, links };
       });
       return data;
     } catch (evalErr) {
@@ -84,31 +225,25 @@ async function safeExtractMetadata(workerPage, maxRetries = 3) {
                          msg.includes('target closed');
 
       if (isNavError && attempt < maxRetries && !workerPage.isClosed()) {
-        // Page was navigating while evaluating. Give the new page context a moment to settle and retry.
         await workerPage.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
         await new Promise(r => setTimeout(r, 600));
         continue;
       }
 
-      // If evaluate still fails, use workerPage.content() as resilient fallback
       try {
         if (!workerPage.isClosed()) {
           const html = await workerPage.content();
           if (html && html.length > 50) {
-            return extractMetadataFromHtml(html);
+            return extractMetadataFromHtml(html, workerPage.url());
           }
         }
-      } catch (contentErr) {
-        // Content fallback failed
-      }
+      } catch (contentErr) {}
 
-      if (attempt >= maxRetries) {
-        break;
-      }
+      if (attempt >= maxRetries) break;
     }
   }
 
-  return { title: '', metaDescription: '', h1: '', h2: '', wordCount: 0, links: [] };
+  return { title: '', metaDescription: '', canonical: '', metaRobots: '', h1: '', h2: '', h2s: [], schemaTypes: [], breadcrumbs: [], contentSnippet: '', pageType: 'OTHER', wordCount: 0, links: [] };
 }
 
 export async function crawlSite(startUrl, config, onProgress, getIsStopped, getIsPaused, initialState = null) {
@@ -494,6 +629,13 @@ export async function crawlSite(startUrl, config, onProgress, getIsStopped, getI
             metaDescription: data.metaDescription,
             h1: data.h1,
             h2: data.h2,
+            h2s: data.h2s,
+            canonical: data.canonical || currentItem.normalized,
+            metaRobots: data.metaRobots || 'index, follow',
+            schemaTypes: data.schemaTypes,
+            breadcrumbs: data.breadcrumbs,
+            contentSnippet: data.contentSnippet,
+            pageType: data.pageType,
             statusCode,
             wordCount: data.wordCount,
             inlinks: 1,
@@ -632,9 +774,9 @@ export async function fetchSingleUrl(url, config) {
       ...metadata,
       titleLength: metadata.title?.length || 0,
       metaDescriptionLength: metadata.metaDescription?.length || 0,
-      metaRobots: '', // default
-      indexability: 'Indexable',
-      canonical: url,
+      metaRobots: metadata.metaRobots || 'index, follow',
+      indexability: (metadata.metaRobots && metadata.metaRobots.toLowerCase().includes('noindex')) ? 'Non-Indexable' : 'Indexable',
+      canonical: metadata.canonical || url,
       inlinks: 0,
       outlinks: metadata.links?.length || 0,
       outgoingLinks: metadata.links || [],
