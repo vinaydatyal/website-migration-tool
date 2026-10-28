@@ -125,6 +125,21 @@ export const Auth: React.FC = () => {
               {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
             </button>
           </div>
+
+          {(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+            <div className="mt-4 pt-4 border-t border-white/5 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('migrateshield_local_mode', 'true');
+                  navigate('/');
+                }}
+                className="text-xs text-primary-400 hover:text-primary-300 font-medium transition-colors"
+              >
+                ⚡ Continue in Localhost Dev Mode
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { crawlSite, fetchSingleUrl } from './crawler.js';
+import { crawlSite, fetchSingleUrl, parseSitemapFast } from './crawler.js';
 import { validateRedirects } from './validator.js';
 import { generateAuthUrl, handleAuthCallback, fetchGscData, fetchGscSites, fetchGa4Properties, fetchGa4Data } from './gsc.js';
 import { checkDnsAndSsl, checkRobotsTxt, checkSitemapXml } from './infrastructure.js';
@@ -84,6 +84,29 @@ app.post('/api/projects/:id/comment', async (req, res) => {
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
 const activeJobs = new Map();
+
+// Fast-Track XML Sitemap Parser Endpoint
+app.post('/api/crawl/sitemap', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    const result = await parseSitemapFast(url);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/crawl/sitemap', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'URL query parameter is required' });
+    const result = await parseSitemapFast(url);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post('/api/crawl', verifyAuth, async (req, res) => {
   const { url, config } = req.body;

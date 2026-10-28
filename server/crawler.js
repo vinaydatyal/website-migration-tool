@@ -787,3 +787,106 @@ export async function fetchSingleUrl(url, config) {
     await browser.close().catch(() => {});
   }
 }
+
+/**
+ * Fast-Track XML Sitemap Parser
+ * Discovers thousands of URLs in under 2 seconds before deep crawling.
+ */
+export async function parseSitemapFast(inputUrl) {
+  try {
+    const origin = new URL(inputUrl).origin;
+    const candidateUrls = [
+      inputUrl.endsWith('.xml') ? inputUrl : null,
+      `${origin}/sitemap.xml`,
+      `${origin}/sitemap_index.xml`,
+      `${origin}/wp-sitemap.xml`,
+      `${origin}/sitemap/sitemap.xml`
+    ].filter(Boolean);
+
+    // Also check robots.txt for Sitemap: directive
+    try {
+      const robotsRes = await fetch(`${origin}/robots.txt`, { 
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MigrateShield/2.0' }, 
+        signal: AbortSignal.timeout(4000) 
+      });
+      if (robotsRes.ok) {
+        const robotsText = await robotsRes.text();
+        const sitemapMatches = robotsText.matchAll(/Sitemap:\s*(https?:\/\/[^\s]+)/gi);
+        for (const m of sitemapMatches) {
+          if (m[1] && !candidateUrls.includes(m[1].trim())) {
+            candidateUrls.unshift(m[1].trim());
+          }
+        }
+      }
+    } catch {
+      // ignore robots.txt fetch error
+    }
+
+    const discoveredUrls = new Set();
+    const subSitemaps = [];
+    let successfulSitemapUrl = null;
+
+    async function fetchAndParseXml(sitemapUrl, depth = 0) {
+      if (depth > 2 || discoveredUrls.size >= 15000) return;
+      try {
+        const res = await fetch(sitemapUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MigrateShield/2.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (!res.ok) return;
+        const xml = await res.text();
+        successfulSitemapUrl = successfulSitemapUrl || sitemapUrl;
+
+        // Check if it is a sitemapindex
+        const isIndex = /<sitemapindex/i.test(xml);
+        if (isIndex) {
+          const sitemapLocMatches = xml.matchAll(/<loc>([\s\S]*?)<\/loc>/gi);
+          const childSitemaps = [];
+          for (const sm of sitemapLocMatches) {
+            const loc = sm[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+            if (loc && loc.startsWith('http')) {
+              childSitemaps.push(loc);
+              subSitemaps.push(loc);
+            }
+          }
+          // Concurrently fetch child sitemaps
+          const chunks = childSitemaps.slice(0, 15);
+          await Promise.all(chunks.map(childUrl => fetchAndParseXml(childUrl, depth + 1)));
+        } else {
+          // Regular urlset
+          const urlLocMatches = xml.matchAll(/<loc>([\s\S]*?)<\/loc>/gi);
+          for (const um of urlLocMatches) {
+            const loc = um[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+            if (loc && loc.startsWith('http')) {
+              const normalized = normalizeUrl(loc);
+              if (normalized) discoveredUrls.add(normalized);
+            }
+          }
+        }
+      } catch {
+        // error on individual sitemap fetch
+      }
+    }
+
+    for (const testUrl of candidateUrls) {
+      await fetchAndParseXml(testUrl, 0);
+      if (discoveredUrls.size > 0) break; // found valid sitemap
+    }
+
+    return {
+      success: discoveredUrls.size > 0,
+      sitemapUrl: successfulSitemapUrl,
+      count: discoveredUrls.size,
+      urls: Array.from(discoveredUrls),
+      subSitemaps: subSitemaps.slice(0, 20)
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      count: 0,
+      urls: []
+    };
+  }
+}
+
